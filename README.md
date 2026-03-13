@@ -1,4 +1,4 @@
-# Zhi Meida Player前端
+# Silent Nocturne
 ## 0.起源
 - **仓库地址**
   - https://github.com/KKxMM19192/Zhi-Media-Player
