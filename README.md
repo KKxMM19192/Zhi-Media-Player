@@ -1,10 +1,4 @@
 # Silent Nocturne
-## 0.起源
-- **仓库地址**
-  - https://github.com/KKxMM19192/Silent-Nocturne
-- **开发团队**
-  - 仓库拥有者：K[@KKxMM19192](https://github.com/KKxMM19192)
-  - 协作者：Springle168[@Springle168](https://github.com/Springle168)
 
 ## 1.推荐IDE配置
 
