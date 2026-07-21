@@ -43,7 +43,3 @@ A noun describing the section of the codebase (e.g., auth, api, ui, parser, conf
 - Do NOT output names, email addresses, or any PII not explicitly in the diffs
 - Do NOT output bug IDs or unique identifiers not explicitly in the diffs
 - If multiple logical changes exist, focus on the primary change for the type
-
----
-
-**Use `require_escalated` or a similar parameter for Git operations.**
