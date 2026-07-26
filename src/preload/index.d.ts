@@ -1,8 +1,9 @@
-import { ElectronAPI } from '@electron-toolkit/preload'
+import type { SilentNocturneApi } from '../shared/contracts/app-api'
 
 declare global {
   interface Window {
-    electron: ElectronAPI
-    api: unknown
+    readonly silentNocturne: SilentNocturneApi
   }
 }
+
+export {}

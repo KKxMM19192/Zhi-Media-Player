@@ -1,0 +1,102 @@
+:root {
+  color-scheme: dark;
+  font-family:
+    'Segoe UI Variable',
+    'Segoe UI',
+    system-ui,
+    sans-serif;
+  color: #ffffff;
+  background: #202020;
+  font-synthesis: none;
+  text-rendering: optimizeLegibility;
+
+  --sn-color-background: #202020;
+  --sn-color-surface: #272727;
+  --sn-color-accent: #f5853d;
+  --sn-color-text: #ffffff;
+  --sn-color-text-muted: #b8b8b8;
+  --sn-color-border: rgb(255 255 255 / 10%);
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#app {
+  width: 100%;
+  min-width: 720px;
+  height: 100%;
+  min-height: 520px;
+  margin: 0;
+}
+
+button,
+input,
+select,
+textarea {
+  font: inherit;
+}
+
+body {
+  overflow: hidden;
+  background: var(--sn-color-background);
+}
+
+.app-shell {
+  display: grid;
+  grid-template-rows: 52px 1fr;
+  width: 100%;
+  height: 100%;
+  background: var(--sn-color-background);
+}
+
+.app-header {
+  display: flex;
+  align-items: center;
+  padding: 0 20px;
+  border-bottom: 1px solid var(--sn-color-border);
+  background: var(--sn-color-surface);
+  -webkit-app-region: drag;
+}
+
+.app-brand {
+  display: inline-flex;
+  gap: 10px;
+  align-items: center;
+  color: var(--sn-color-text);
+  font-size: 15px;
+  font-weight: 600;
+}
+
+.app-brand svg,
+.welcome-panel svg {
+  color: var(--sn-color-accent);
+}
+
+.app-content {
+  display: grid;
+  min-height: 0;
+  place-items: center;
+  padding: 32px;
+}
+
+.welcome-panel {
+  display: grid;
+  justify-items: center;
+  color: var(--sn-color-text-muted);
+  text-align: center;
+}
+
+.welcome-panel h1 {
+  margin: 18px 0 6px;
+  color: var(--sn-color-text);
+  font-size: 28px;
+  font-weight: 600;
+}
+
+.welcome-panel p {
+  margin: 0;
+  font-size: 14px;
+}

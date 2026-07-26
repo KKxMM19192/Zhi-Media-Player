@@ -1,40 +1,22 @@
-<template>
-  <el-container class="main_page">
-    <Sidebar/>
-
-    <el-container direction="vertical">
-      <el-header height="20px">
-        <div class="main_title">Title</div>
-      </el-header>
-
-      <el-main>
-        <el-scrollbar>
-          <div>
-            <h2>Content</h2>
-          </div>
-        </el-scrollbar>
-      </el-main>
-    </el-container>
-  </el-container>
-</template>
-
 <script setup lang="ts">
-  import Sidebar from './components/Sidebar.vue'
+import { Moon } from '@lucide/vue'
 </script>
 
-<style>
-  body {
-    margin: 0;
-    padding: 0;
-    overflow: hidden;
-  }
-  .main_page {
-    height: 100vh;
-    width: 100vw;
-  }
-  .main_title {
-    border-bottom: 1px solid black;
-    display: flex;
-    align-items: center;
-  }
-</style>
+<template>
+  <div class="app-shell">
+    <header class="app-header">
+      <div class="app-brand">
+        <Moon :size="20" aria-hidden="true" />
+        <span>Silent Nocturne</span>
+      </div>
+    </header>
+
+    <main class="app-content">
+      <section class="welcome-panel">
+        <Moon :size="44" aria-hidden="true" />
+        <h1>Silent Nocturne</h1>
+        <p>本地音乐播放器</p>
+      </section>
+    </main>
+  </div>
+</template>

@@ -10,7 +10,7 @@ Silent Nocturne 是一个使用 Electron、Vue 3 和 TypeScript 开发的本地�
 
 ## 开发环境
 
-项目使用 pnpm 管理依赖。
+项目要求 Node.js 22.14 或更高版本，并使用 pnpm 10 管理依赖。推荐通过 Corepack 使用 `package.json` 中声明的 pnpm 版本。
 
 ```bash
 pnpm install
@@ -20,9 +20,13 @@ pnpm dev
 常用验证命令：
 
 ```bash
+pnpm lint
+pnpm test
 pnpm typecheck
 pnpm build
 ```
+
+`pnpm lint` 和 `pnpm test` 不会修改源码；需要自动修复 ESLint 问题时显式运行 `pnpm lint:fix`。
 
 ## 项目结构
 
