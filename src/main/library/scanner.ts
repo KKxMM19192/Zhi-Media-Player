@@ -127,3 +127,43 @@ export async function scanMusicFiles(filePaths: readonly string[]): Promise<Trac
   }
   return tracks
 }
+
+export interface DroppedMusicScanResult {
+  readonly nodes: MusicTreeNode[]
+  readonly skippedCount: number
+}
+
+export async function scanDroppedMusicPaths(
+  paths: readonly string[],
+  limits: MusicScanLimits = defaultScanLimits
+): Promise<DroppedMusicScanResult> {
+  const nodes: MusicTreeNode[] = []
+  const budget: ScanBudget = { nodeCount: 0 }
+  let skippedCount = 0
+
+  for (const inputPath of uniqueWindowsPaths(paths)) {
+    const absolutePath = resolve(inputPath)
+    let inputStat
+    try {
+      inputStat = await stat(absolutePath)
+    } catch {
+      skippedCount += 1
+      continue
+    }
+
+    if (inputStat.isDirectory()) {
+      const playlist = await scanDirectory(absolutePath, 0, budget, limits)
+      if (playlist) {
+        nodes.push(playlist)
+      } else {
+        skippedCount += 1
+      }
+    } else if (inputStat.isFile() && isSupportedMusicPath(absolutePath)) {
+      nodes.push(createTrack(absolutePath, budget, limits))
+    } else {
+      skippedCount += 1
+    }
+  }
+
+  return { nodes, skippedCount }
+}

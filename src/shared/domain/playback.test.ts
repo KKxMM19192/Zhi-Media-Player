@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 import {
   getAdjacentTrack,
   getLibraryDirectPlaybackOrder,
+  getNextPlaybackMode,
   getQueuePlaybackOrder
 } from './playback'
 import type { MusicTreeNode } from './music-tree'
@@ -54,5 +55,19 @@ describe('playback order', () => {
     const order = getQueuePlaybackOrder(tree)
     expect(getAdjacentTrack(order, 'direct-c', 1, 'sequential')).toBeUndefined()
     expect(getAdjacentTrack(order, 'direct-c', 1, 'repeat-all')?.id).toBe('direct-a')
+  })
+
+  it('repeats one only on natural completion and cycles all four modes', () => {
+    const order = getQueuePlaybackOrder(tree)
+    expect(getAdjacentTrack(order, 'direct-a', 1, 'repeat-one', 'track-ended')?.id).toBe(
+      'direct-a'
+    )
+    expect(getAdjacentTrack(order, 'direct-a', 1, 'repeat-one', 'user-skip')?.id).toBe(
+      'nested-b'
+    )
+    expect(getNextPlaybackMode('sequential')).toBe('repeat-all')
+    expect(getNextPlaybackMode('repeat-all')).toBe('repeat-one')
+    expect(getNextPlaybackMode('repeat-one')).toBe('shuffle')
+    expect(getNextPlaybackMode('shuffle')).toBe('sequential')
   })
 })

@@ -9,6 +9,7 @@ import {
 
 export type PlaybackMode = 'sequential' | 'repeat-all' | 'repeat-one' | 'shuffle'
 export type PlaybackSource = 'library' | 'queue'
+export type PlaybackAdvanceCause = 'track-ended' | 'user-skip'
 
 export interface PlaybackContext {
   readonly source: PlaybackSource
@@ -53,14 +54,15 @@ export function getAdjacentTrack(
   order: readonly TrackNode[],
   currentTrackId: NodeId,
   direction: -1 | 1,
-  mode: PlaybackMode
+  mode: PlaybackMode,
+  cause: PlaybackAdvanceCause = 'user-skip'
 ): TrackNode | undefined {
   const currentIndex = order.findIndex((track) => track.id === currentTrackId)
   if (currentIndex < 0 || order.length === 0) {
     return undefined
   }
 
-  if (mode === 'repeat-one') {
+  if (mode === 'repeat-one' && cause === 'track-ended') {
     return order[currentIndex]
   }
 
@@ -74,4 +76,9 @@ export function getAdjacentTrack(
   }
 
   return undefined
+}
+
+export function getNextPlaybackMode(mode: PlaybackMode): PlaybackMode {
+  const modes: PlaybackMode[] = ['sequential', 'repeat-all', 'repeat-one', 'shuffle']
+  return modes[(modes.indexOf(mode) + 1) % modes.length]
 }

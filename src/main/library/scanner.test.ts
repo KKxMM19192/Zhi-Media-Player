@@ -3,7 +3,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, describe, expect, it } from 'vitest'
 import { flattenTracks } from '../../shared/domain/music-tree'
-import { scanMusicFolders } from './scanner'
+import { scanDroppedMusicPaths, scanMusicFolders } from './scanner'
 
 const temporaryDirectories: string[] = []
 
@@ -52,5 +52,25 @@ describe('music folder scanner', () => {
     await expect(
       scanMusicFolders([root], { maximumDirectoryDepth: 63, maximumNodeCount: 2 })
     ).rejects.toThrow(/exceeds 2 nodes/)
+  })
+
+  it('imports a mixed external drop while preserving top-level order', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'sn-drop-'))
+    temporaryDirectories.push(root)
+    const folder = join(root, 'Folder')
+    const directTrack = join(root, 'Direct.mp3')
+    await mkdir(folder)
+    await writeFile(join(folder, 'Nested.flac'), '')
+    await writeFile(directTrack, '')
+    await writeFile(join(root, 'ignored.txt'), '')
+
+    const result = await scanDroppedMusicPaths([
+      directTrack,
+      folder,
+      join(root, 'ignored.txt')
+    ])
+
+    expect(result.nodes.map((node) => node.name)).toEqual(['Direct.mp3', 'Folder'])
+    expect(result.skippedCount).toBe(1)
   })
 })

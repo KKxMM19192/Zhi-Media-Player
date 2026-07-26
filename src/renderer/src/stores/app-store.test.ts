@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 
 import { createPinia, setActivePinia } from 'pinia'
-import { beforeEach, describe, expect, it } from 'vitest'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { createDefaultAppState, type PersistedAppState } from '../../../shared/domain/app-state'
 import type { MusicTreeNode } from '../../../shared/domain/music-tree'
 import { useAppStore } from './app-store'
@@ -18,6 +18,19 @@ const queue: MusicTreeNode[] = [
   },
   { id: 'last', type: 'track', name: 'Last.flac', path: 'C:\\Music\\Last.flac' }
 ]
+
+function createTrack(id: string): MusicTreeNode {
+  return {
+    id,
+    type: 'track',
+    name: `${id}.mp3`,
+    path: `C:\\Music\\${id}.mp3`
+  }
+}
+
+function createQueue(): MusicTreeNode[] {
+  return structuredClone(queue)
+}
 
 describe('app store queue editing', () => {
   beforeEach(() => {
@@ -86,7 +99,135 @@ describe('app store queue editing', () => {
     expect(store.currentTrackId).toBe('next')
   })
 
-  it('converts reactive state to a structured-cloneable persistence snapshot', async () => {
+  it('creates an independent snapshot when saving the current queue', () => {
+    const store = useAppStore()
+    store.queue = createQueue()
+
+    store.saveCurrentQueue('Road trip')
+
+    const savedQueue = store.savedQueues[0]!
+    const savedPlaylist = savedQueue.nodes[0]!
+    const currentPlaylist = store.queue[0]!
+    expect(savedPlaylist).toMatchObject({ type: 'playlist', name: 'Playlist' })
+    expect(currentPlaylist).toMatchObject({ type: 'playlist', name: 'Playlist' })
+    expect(savedPlaylist).not.toBe(currentPlaylist)
+    expect(savedPlaylist.id).not.toBe(currentPlaylist.id)
+
+    if (savedPlaylist.type !== 'playlist' || currentPlaylist.type !== 'playlist') {
+      throw new Error('Expected both roots to be playlists.')
+    }
+    expect(savedPlaylist.children[0]).not.toBe(currentPlaylist.children[0])
+    expect(savedPlaylist.children[0]?.id).not.toBe(currentPlaylist.children[0]?.id)
+
+    store.queue[0] = createTrack('replacement')
+
+    expect(savedQueue.nodes[0]).toMatchObject({ type: 'playlist', name: 'Playlist' })
+  })
+
+  it('records the previous queue and creates independent nodes when replacing from a saved queue', async () => {
+    const store = useAppStore()
+    store.queue = createQueue()
+    store.saveCurrentQueue('Saved queue')
+    const savedQueue = store.savedQueues[0]!
+    store.queue = [createTrack('previous')]
+
+    await store.replaceQueueWithSaved(savedQueue.id, false)
+
+    expect(store.queueHistory).toHaveLength(1)
+    expect(store.queueHistory[0]).toMatchObject({
+      reason: 'replace',
+      nodes: [{ type: 'track', path: 'C:\\Music\\previous.mp3' }]
+    })
+    expect(store.queue[0]).not.toBe(savedQueue.nodes[0])
+    expect(store.queue[0]?.id).not.toBe(savedQueue.nodes[0]?.id)
+
+    const replacementPlaylist = store.queue[0]
+    const savedPlaylist = savedQueue.nodes[0]
+    if (replacementPlaylist?.type !== 'playlist' || savedPlaylist?.type !== 'playlist') {
+      throw new Error('Expected the saved queue replacement to preserve its playlist root.')
+    }
+    expect(replacementPlaylist.children[0]).not.toBe(savedPlaylist.children[0])
+    expect(replacementPlaylist.children[0]?.id).not.toBe(savedPlaylist.children[0]?.id)
+  })
+
+  it('records clear and restore operations while retaining the restored history entry', () => {
+    const store = useAppStore()
+    store.queue = [createTrack('before-clear')]
+
+    store.clearCurrentQueue()
+
+    const clearEntry = store.queueHistory[0]!
+    expect(clearEntry).toMatchObject({
+      reason: 'clear',
+      nodes: [{ path: 'C:\\Music\\before-clear.mp3' }]
+    })
+    expect(store.queue).toEqual([])
+
+    store.restoreQueueHistory(clearEntry.id)
+
+    expect(store.queueHistory).toHaveLength(2)
+    expect(store.queueHistory.map((entry) => entry.reason)).toEqual(['clear', 'restore'])
+    expect(store.queueHistory.some((entry) => entry.id === clearEntry.id)).toBe(true)
+    expect(store.queue[0]?.id).not.toBe(clearEntry.nodes[0]?.id)
+
+    store.queue = [createTrack('current')]
+    store.queueHistory = Array.from({ length: 10 }, (_, index) => ({
+      id: `history-${index}`,
+      createdAt: index,
+      reason: 'replace' as const,
+      nodes: [createTrack(`history-track-${index}`)]
+    }))
+
+    store.restoreQueueHistory('history-0')
+
+    expect(store.queueHistory).toHaveLength(10)
+    expect(store.queueHistory.some((entry) => entry.id === 'history-0')).toBe(true)
+    expect(store.queueHistory.some((entry) => entry.id === 'history-1')).toBe(false)
+    expect(store.queueHistory.at(-1)?.reason).toBe('restore')
+  })
+
+  it('shuffles once on entry, then restores the original tree and current track mapping on exit', () => {
+    const store = useAppStore()
+    const random = vi.spyOn(Math, 'random').mockReturnValue(0)
+    store.queue = createQueue()
+    store.currentTrackId = 'current'
+    store.playbackContext = { source: 'queue', containerId: null }
+
+    store.cyclePlaybackMode()
+    store.cyclePlaybackMode()
+    store.cyclePlaybackMode()
+
+    expect(store.playbackMode).toBe('shuffle')
+    expect(random).toHaveBeenCalledTimes(2)
+    expect(store.queue.every((node) => node.type === 'track')).toBe(true)
+    const shuffledCurrentTrackId = store.currentTrackId
+    const restoredCurrentTrackId = store.shuffle?.originalTrackIdByShuffledTrackId[shuffledCurrentTrackId!]
+    expect(restoredCurrentTrackId).toBeDefined()
+
+    store.cyclePlaybackMode()
+
+    expect(store.playbackMode).toBe('sequential')
+    expect(random).toHaveBeenCalledTimes(2)
+    expect(store.shuffle).toBeNull()
+    expect(store.queue).toMatchObject([
+      {
+        type: 'playlist',
+        name: 'Playlist',
+        children: [
+          { type: 'track', path: 'C:\\Music\\Current.mp3' },
+          { type: 'track', path: 'C:\\Music\\Next.mp3' }
+        ]
+      },
+      { type: 'track', path: 'C:\\Music\\Last.flac' }
+    ])
+    expect(store.queueHistory.at(-1)).toMatchObject({ reason: 'shuffle-exit' })
+    expect(store.currentTrackId).toBe(restoredCurrentTrackId)
+    expect(store.currentTrack?.path).toBe('C:\\Music\\Current.mp3')
+
+    random.mockRestore()
+  })
+
+  it('persists a structured-cloneable schema v2 snapshot with queue state', async () => {
     let savedState: PersistedAppState | undefined
     Object.defineProperty(window, 'silentNocturne', {
       configurable: true,
@@ -99,17 +240,27 @@ describe('app store queue editing', () => {
     })
     const store = useAppStore()
     await store.initialize()
-    store.library = queue
-    store.currentTrackId = 'current'
-    store.playbackContext = { source: 'library', containerId: 'playlist' }
-    store.positionSeconds = 27
+    store.library = createQueue()
+    store.queue = createQueue()
+    store.saveCurrentQueue('Snapshot queue')
+    await store.replaceQueueWithSaved(store.savedQueues[0]!.id, false)
+    store.cyclePlaybackMode()
+    store.cyclePlaybackMode()
+    store.cyclePlaybackMode()
 
     await store.flushState()
 
     expect(savedState?.library).toEqual(queue)
-    expect(savedState?.playback).toMatchObject({
-      currentTrackId: 'current',
-      positionSeconds: 27
+    expect(savedState).toMatchObject({
+      schemaVersion: 2,
+      savedQueues: [{ name: 'Snapshot queue' }],
+      queueHistory: [{ reason: 'replace' }],
+      shuffle: expect.any(Object)
     })
+    expect(savedState?.shuffle?.originalQueue[0]).toMatchObject({
+      type: 'playlist',
+      name: 'Playlist'
+    })
+    expect(() => structuredClone(savedState)).not.toThrow()
   })
 })

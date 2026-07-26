@@ -166,6 +166,79 @@ export function cloneTreeWithNewIds(
   })
 }
 
+export function cloneTreeWithIdMap(
+  nodes: readonly MusicTreeNode[],
+  idFactory: NodeIdFactory = createNodeId
+): { nodes: MusicTreeNode[]; clonedIdByOriginalId: Record<NodeId, NodeId> } {
+  const clonedIdByOriginalId: Record<NodeId, NodeId> = {}
+  const cloneNodes = (siblings: readonly MusicTreeNode[]): MusicTreeNode[] =>
+    siblings.map((node) => {
+      const clonedId = idFactory()
+      clonedIdByOriginalId[node.id] = clonedId
+      return node.type === 'track'
+        ? { ...node, id: clonedId }
+        : {
+            ...node,
+            id: clonedId,
+            children: cloneNodes(node.children)
+          }
+    })
+
+  return { nodes: cloneNodes(nodes), clonedIdByOriginalId }
+}
+
+export function cloneTree(nodes: readonly MusicTreeNode[]): MusicTreeNode[] {
+  return nodes.map((node) =>
+    node.type === 'track'
+      ? { ...node }
+      : {
+          ...node,
+          children: cloneTree(node.children)
+        }
+  )
+}
+
+export function treesHaveSameContent(
+  left: readonly MusicTreeNode[],
+  right: readonly MusicTreeNode[]
+): boolean {
+  if (left.length !== right.length) {
+    return false
+  }
+
+  return left.every((leftNode, index) => {
+    const rightNode = right[index]
+    if (
+      !rightNode ||
+      leftNode.type !== rightNode.type ||
+      leftNode.name !== rightNode.name
+    ) {
+      return false
+    }
+    if (leftNode.type === 'track') {
+      return rightNode.type === 'track' && leftNode.path === rightNode.path
+    }
+    return (
+      rightNode.type === 'playlist' &&
+      treesHaveSameContent(leftNode.children, rightNode.children)
+    )
+  })
+}
+
+export function mapTracks(
+  nodes: readonly MusicTreeNode[],
+  mapper: (track: TrackNode) => TrackNode
+): MusicTreeNode[] {
+  return nodes.map((node) =>
+    node.type === 'track'
+      ? mapper(node)
+      : {
+          ...node,
+          children: mapTracks(node.children, mapper)
+        }
+  )
+}
+
 export function containsAnyNode(
   nodes: readonly MusicTreeNode[],
   candidateRootIds: readonly NodeId[],

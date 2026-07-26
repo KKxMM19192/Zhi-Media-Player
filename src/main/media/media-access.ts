@@ -1,6 +1,6 @@
 import { randomBytes } from 'node:crypto'
 import { access } from 'node:fs/promises'
-import type { TrackMetadata } from '../../shared/contracts/app-api'
+import type { TrackAvailability, TrackMetadata } from '../../shared/contracts/app-api'
 import { normalizeWindowsPathForComparison } from '../library/path-utils'
 
 interface ParsedMetadata {
@@ -47,6 +47,23 @@ export class MediaAccessPolicy {
     } catch {
       return false
     }
+  }
+
+  public async checkMany(requestedPaths: readonly string[]): Promise<TrackAvailability[]> {
+    const results = new Array<TrackAvailability>(requestedPaths.length)
+    let nextIndex = 0
+    const worker = async (): Promise<void> => {
+      while (nextIndex < requestedPaths.length) {
+        const index = nextIndex
+        nextIndex += 1
+        const path = requestedPaths[index]
+        results[index] = { path, available: await this.exists(path) }
+      }
+    }
+    await Promise.all(
+      Array.from({ length: Math.min(16, requestedPaths.length) }, () => worker())
+    )
+    return results
   }
 
   public issueMediaToken(requestedPath: string): string {

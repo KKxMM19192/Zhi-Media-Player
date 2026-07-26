@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import {
   isSupportedMusicPath,
+  mapWindowsPathBetweenRoots,
   normalizeWindowsPathForComparison,
   pathsEqual,
   uniqueWindowsPaths
@@ -23,5 +24,22 @@ describe('Windows music paths', () => {
       'C:\\Music\\A.mp3',
       'D:\\B.flac'
     ])
+  })
+
+  it('maps only path-segment descendants between directory roots', () => {
+    expect(
+      mapWindowsPathBetweenRoots(
+        'C:\\Music\\Album\\Track.mp3',
+        'C:\\Music',
+        'D:\\Archive'
+      )
+    ).toBe('D:\\Archive\\Album\\Track.mp3')
+    expect(
+      mapWindowsPathBetweenRoots(
+        'C:\\Music-old\\Track.mp3',
+        'C:\\Music',
+        'D:\\Archive'
+      )
+    ).toBeNull()
   })
 })

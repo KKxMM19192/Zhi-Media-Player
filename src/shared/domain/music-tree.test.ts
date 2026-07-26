@@ -1,6 +1,8 @@
 import { describe, expect, it } from 'vitest'
 import {
   cloneTreeWithNewIds,
+  cloneTree,
+  cloneTreeWithIdMap,
   collectSubtreeIds,
   containsAnyNode,
   flattenTracks,
@@ -10,6 +12,7 @@ import {
   normalizeSelectedRootIds,
   removeNodes,
   toggleNodeSelection,
+  treesHaveSameContent,
   type MusicTreeNode
 } from './music-tree'
 
@@ -30,6 +33,10 @@ const tree: MusicTreeNode[] = [
   },
   { id: 'track-e', type: 'track', name: 'E.mp3', path: 'C:\\Music\\E.mp3' }
 ]
+
+function takeIds(values: string[]): () => string {
+  return () => values.shift() as string
+}
 
 describe('music tree', () => {
   it('clones a tree with completely independent node identities', () => {
@@ -60,6 +67,44 @@ describe('music tree', () => {
       }
     ])
     expect(new Set(cloned.flatMap(collectSubtreeIds))).not.toContain('playlist-a')
+  })
+
+  it('deep-clones a tree while preserving identities and compares semantic content', () => {
+    const cloned = cloneTree(tree)
+
+    expect(cloned).toEqual(tree)
+    expect(cloned).not.toBe(tree)
+    expect((cloned[0] as { children: MusicTreeNode[] }).children).not.toBe(
+      (tree[0] as { children: MusicTreeNode[] }).children
+    )
+    expect(treesHaveSameContent(tree, cloned)).toBe(true)
+    expect(
+      treesHaveSameContent(tree, [
+        {
+          ...(cloned[0] as MusicTreeNode),
+          name: 'Changed'
+        } as MusicTreeNode,
+        cloned[1]
+      ])
+    ).toBe(false)
+  })
+
+  it('clones a tree with an explicit identity map', () => {
+    const cloned = cloneTreeWithIdMap(
+      [tree[0]],
+      takeIds(['mapped-playlist', 'mapped-track', 'mapped-child', 'mapped-nested-track'])
+    )
+
+    expect(cloned.clonedIdByOriginalId).toEqual({
+      'playlist-a': 'mapped-playlist',
+      'track-b': 'mapped-track',
+      'playlist-c': 'mapped-child',
+      'track-d': 'mapped-nested-track'
+    })
+    expect(flattenTracks(cloned.nodes).map((track) => track.id)).toEqual([
+      'mapped-track',
+      'mapped-nested-track'
+    ])
   })
 
   it('normalizes selected descendants to the top selected ancestor', () => {
