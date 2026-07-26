@@ -2,6 +2,7 @@
 
 import { createPinia, setActivePinia } from 'pinia'
 import { beforeEach, describe, expect, it } from 'vitest'
+import { createDefaultAppState, type PersistedAppState } from '../../../shared/domain/app-state'
 import type { MusicTreeNode } from '../../../shared/domain/music-tree'
 import { useAppStore } from './app-store'
 
@@ -83,5 +84,32 @@ describe('app store queue editing', () => {
     await olderRequest
 
     expect(store.currentTrackId).toBe('next')
+  })
+
+  it('converts reactive state to a structured-cloneable persistence snapshot', async () => {
+    let savedState: PersistedAppState | undefined
+    Object.defineProperty(window, 'silentNocturne', {
+      configurable: true,
+      value: {
+        loadState: async () => ({ state: createDefaultAppState(), warning: null }),
+        saveState: async (state: PersistedAppState) => {
+          savedState = structuredClone(state)
+        }
+      }
+    })
+    const store = useAppStore()
+    await store.initialize()
+    store.library = queue
+    store.currentTrackId = 'current'
+    store.playbackContext = { source: 'library', containerId: 'playlist' }
+    store.positionSeconds = 27
+
+    await store.flushState()
+
+    expect(savedState?.library).toEqual(queue)
+    expect(savedState?.playback).toMatchObject({
+      currentTrackId: 'current',
+      positionSeconds: 27
+    })
   })
 })

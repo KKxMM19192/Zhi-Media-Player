@@ -54,6 +54,24 @@ function isSamePath(left: string, right: string): boolean {
   return normalize(left) === normalize(right)
 }
 
+function createTransferableTree(nodes: readonly MusicTreeNode[]): MusicTreeNode[] {
+  return nodes.map((node) =>
+    node.type === 'track'
+      ? {
+          id: node.id,
+          type: node.type,
+          name: node.name,
+          path: node.path
+        }
+      : {
+          id: node.id,
+          type: node.type,
+          name: node.name,
+          children: createTransferableTree(node.children)
+        }
+  )
+}
+
 export const useAppStore = defineStore('app', () => {
   const defaults = createDefaultAppState()
   const initialized = ref(false)
@@ -117,17 +135,26 @@ export const useAppStore = defineStore('app', () => {
   function snapshot(): PersistedAppState {
     return {
       schemaVersion: APP_STATE_SCHEMA_VERSION,
-      library: library.value,
-      queue: queue.value,
+      // Electron IPC cannot structured-clone Vue's reactive proxies.
+      library: createTransferableTree(library.value),
+      queue: createTransferableTree(queue.value),
       playback: {
         currentTrackId: currentTrackId.value,
-        context: playbackContext.value,
+        context: playbackContext.value ? { ...playbackContext.value } : null,
         positionSeconds: positionSeconds.value,
         volume: volume.value,
         mode: playbackMode.value,
         paused: paused.value
       },
       expandedNodeIds: [...expandedNodeIds.value]
+    }
+  }
+
+  async function persistSnapshot(errorFallback: string): Promise<void> {
+    try {
+      await window.silentNocturne.saveState(snapshot())
+    } catch (error) {
+      showError(error, errorFallback)
     }
   }
 
@@ -140,9 +167,7 @@ export const useAppStore = defineStore('app', () => {
     }
     saveTimer = window.setTimeout(() => {
       saveTimer = undefined
-      void window.silentNocturne
-        .saveState(snapshot())
-        .catch((error: unknown) => showError(error, '保存应用状态失败。'))
+      void persistSnapshot('保存应用状态失败。')
     }, 180)
   }
 
@@ -152,9 +177,7 @@ export const useAppStore = defineStore('app', () => {
     }
     saveTimer = window.setTimeout(() => {
       saveTimer = undefined
-      void window.silentNocturne
-        .saveState(snapshot())
-        .catch((error: unknown) => showError(error, '保存播放进度失败。'))
+      void persistSnapshot('保存播放进度失败。')
     }, 5000)
   }
 
@@ -164,7 +187,7 @@ export const useAppStore = defineStore('app', () => {
       saveTimer = undefined
     }
     if (initialized.value) {
-      await window.silentNocturne.saveState(snapshot())
+      await persistSnapshot('关闭前保存应用状态失败。')
     }
   }
 
