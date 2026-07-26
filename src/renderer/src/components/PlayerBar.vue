@@ -16,6 +16,7 @@ const {
 const audio = ref<HTMLAudioElement | null>(null)
 const mediaLoading = ref(false)
 let mediaRequest = 0
+let pendingResumePositionSeconds = 0
 
 const progressMaximum = computed(() => Math.max(durationSeconds.value, positionSeconds.value, 1))
 
@@ -36,6 +37,7 @@ watch(
     if (!element) {
       return
     }
+    pendingResumePositionSeconds = track ? positionSeconds.value : 0
     mediaLoading.value = Boolean(track)
     element.pause()
     element.removeAttribute('src')
@@ -53,6 +55,7 @@ watch(
       element.load()
     } catch {
       if (request === mediaRequest && currentTrack.value?.id === track.id) {
+        pendingResumePositionSeconds = 0
         mediaLoading.value = false
         store.markPlaybackError()
       }
@@ -92,11 +95,18 @@ function handleLoadedMetadata(): void {
     return
   }
   audio.value.volume = volume.value
-  mediaLoading.value = false
   store.updateDuration(audio.value.duration)
-  if (positionSeconds.value > 0 && positionSeconds.value < audio.value.duration) {
-    audio.value.currentTime = positionSeconds.value
+  if (pendingResumePositionSeconds > 0) {
+    const restoredPosition = Number.isFinite(audio.value.duration)
+      ? Math.min(pendingResumePositionSeconds, Math.max(0, audio.value.duration))
+      : 0
+    audio.value.currentTime = restoredPosition
+    if (restoredPosition !== positionSeconds.value) {
+      store.updatePosition(restoredPosition)
+    }
   }
+  pendingResumePositionSeconds = 0
+  mediaLoading.value = false
   if (!paused.value) {
     void audio.value.play().catch(() => {
       store.paused = true
@@ -107,10 +117,20 @@ function handleLoadedMetadata(): void {
 
 function seek(event: Event): void {
   const value = Number((event.target as HTMLInputElement).value)
+  if (mediaLoading.value) {
+    pendingResumePositionSeconds = value
+  }
   if (audio.value) {
     audio.value.currentTime = value
   }
   store.updatePosition(value)
+}
+
+function handleTimeUpdate(): void {
+  if (!audio.value || mediaLoading.value) {
+    return
+  }
+  store.updatePosition(audio.value.currentTime)
 }
 </script>
 
@@ -119,7 +139,7 @@ function seek(event: Event): void {
     <audio
       ref="audio"
       @loadedmetadata="handleLoadedMetadata"
-      @timeupdate="audio && store.updatePosition(audio.currentTime)"
+      @timeupdate="handleTimeUpdate"
       @durationchange="audio && store.updateDuration(audio.duration)"
       @ended="store.playAdjacent(1)"
       @error="currentTrack && store.markPlaybackError()"
