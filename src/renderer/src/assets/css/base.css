@@ -361,10 +361,17 @@ button:disabled {
 
 .tree-root-drop:hover,
 .panel-root-drop:hover,
-.drawer-root-drop:hover {
+.drawer-root-drop:hover,
+.music-tree--dragging > .tree-root-drop,
+.drop-target--visible {
   border-color: rgb(245 133 61 / 50%);
   color: var(--sn-muted);
   background: var(--sn-accent-soft);
+}
+
+.music-tree--dragging > .tree-root-drop,
+.drop-target--visible {
+  height: 32px;
 }
 
 .panel-root-drop {

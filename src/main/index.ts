@@ -1,4 +1,5 @@
 import { app, BrowserWindow, shell } from 'electron'
+import { mkdirSync } from 'node:fs'
 import { join } from 'node:path'
 import icon from '../../resources/icon.png?asset'
 import { registerAppIpc } from './ipc/register-app-ipc'
@@ -7,7 +8,12 @@ import { registerMediaProtocol, registerMediaScheme } from './media/protocol'
 
 const allowedExternalProtocols = new Set(['http:', 'https:'])
 const mediaAccessPolicy = new MediaAccessPolicy()
+const stateFileName = 'silent-nocturne-state.json'
+const legacyUserDataDirectory = app.getPath('userData')
+const stableUserDataDirectory = join(app.getPath('appData'), 'Silent Nocturne')
 
+mkdirSync(stableUserDataDirectory, { recursive: true })
+app.setPath('userData', stableUserDataDirectory)
 registerMediaScheme()
 
 function isAllowedExternalUrl(rawUrl: string): boolean {
@@ -58,7 +64,10 @@ function createWindow(): void {
 
 app.whenReady().then(() => {
   registerMediaProtocol(mediaAccessPolicy)
-  registerAppIpc(mediaAccessPolicy)
+  registerAppIpc(mediaAccessPolicy, {
+    stateFilePath: join(stableUserDataDirectory, stateFileName),
+    fallbackStateFilePaths: [join(legacyUserDataDirectory, stateFileName)]
+  })
   createWindow()
 
   app.on('activate', () => {

@@ -1,6 +1,5 @@
 import { app, BrowserWindow, dialog, ipcMain } from 'electron'
 import type { IpcMainInvokeEvent, OpenDialogOptions } from 'electron'
-import { join } from 'node:path'
 import type { PersistedAppState } from '../../shared/domain/app-state'
 import { flattenTracks } from '../../shared/domain/music-tree'
 import { APP_IPC_CHANNELS } from '../../shared/contracts/app-api'
@@ -28,8 +27,16 @@ function requireTrustedSender(event: IpcMainInvokeEvent): BrowserWindow {
   return owner
 }
 
-export function registerAppIpc(accessPolicy: MediaAccessPolicy): void {
-  const stateStore = new AppStateStore(join(app.getPath('userData'), 'silent-nocturne-state.json'))
+export interface AppIpcOptions {
+  readonly stateFilePath: string
+  readonly fallbackStateFilePaths?: readonly string[]
+}
+
+export function registerAppIpc(
+  accessPolicy: MediaAccessPolicy,
+  options: AppIpcOptions
+): void {
+  const stateStore = new AppStateStore(options.stateFilePath, options.fallbackStateFilePaths)
   const windowsReadyToClose = new WeakSet<BrowserWindow>()
 
   ipcMain.handle(APP_IPC_CHANNELS.loadState, async (event) => {

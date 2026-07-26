@@ -32,6 +32,7 @@ const {
   expandedNodeIds,
   unavailableNodeIds,
   queueTrackCount,
+  dragPayload,
   message,
   errorMessage
 } = storeToRefs(store)
@@ -271,6 +272,7 @@ onMounted(() => {
             :selected-ids="selectedQueueIds"
             :expanded-ids="expandedNodeIds"
             :unavailable-ids="unavailableNodeIds"
+            :drag-active="Boolean(dragPayload)"
             @toggle-selection="store.toggleSelection"
             @toggle-expanded="store.toggleExpanded"
             @activate="activate"
@@ -317,6 +319,7 @@ onMounted(() => {
             :selected-ids="selectedQueueIds"
             :expanded-ids="expandedNodeIds"
             :unavailable-ids="unavailableNodeIds"
+            :drag-active="Boolean(dragPayload)"
             @toggle-selection="store.toggleSelection"
             @toggle-expanded="store.toggleExpanded"
             @activate="activate"
@@ -328,6 +331,7 @@ onMounted(() => {
           />
           <div
             class="drawer-root-drop"
+            :class="{ 'drop-target--visible': dragPayload }"
             @dragover.prevent
             @drop.prevent="dropAtRoot"
           >

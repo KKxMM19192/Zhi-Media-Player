@@ -19,10 +19,12 @@ const props = withDefaults(
     unavailableIds: ReadonlySet<NodeId>
     parentId?: NodeId | null
     compact?: boolean
+    dragActive?: boolean
   }>(),
   {
     parentId: null,
-    compact: false
+    compact: false,
+    dragActive: false
   }
 )
 
@@ -78,7 +80,11 @@ function handleDrop(event: DragEvent, node: MusicTreeNode): void {
 </script>
 
 <template>
-  <ul class="music-tree" :class="{ 'music-tree--compact': compact }" role="tree">
+  <ul
+    class="music-tree"
+    :class="{ 'music-tree--compact': compact, 'music-tree--dragging': dragActive }"
+    role="tree"
+  >
     <li v-for="node in nodes" :key="node.id" class="tree-node" role="treeitem">
       <div
         class="tree-row"
@@ -140,6 +146,7 @@ function handleDrop(event: DragEvent, node: MusicTreeNode): void {
         :unavailable-ids="unavailableIds"
         :parent-id="node.id"
         :compact="compact"
+        :drag-active="dragActive"
         @toggle-selection="
           (childSource, childId) => emit('toggleSelection', childSource, childId)
         "

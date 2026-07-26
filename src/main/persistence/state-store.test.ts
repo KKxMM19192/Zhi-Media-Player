@@ -72,4 +72,73 @@ describe('application state store', () => {
 
     expect((await store.load()).state.playback.positionSeconds).toBe(2)
   })
+
+  it('migrates a valid legacy state when the stable state file is missing', async () => {
+    const directory = await mkdtemp(join(tmpdir(), 'sn-state-migration-'))
+    temporaryDirectories.push(directory)
+    const legacyPath = join(directory, 'legacy', 'state.json')
+    const stablePath = join(directory, 'stable', 'state.json')
+    const state = {
+      ...createDefaultAppState(),
+      library: [
+        {
+          id: 'imported-playlist',
+          type: 'playlist' as const,
+          name: 'Imported',
+          children: [
+            {
+              id: 'imported-track',
+              type: 'track' as const,
+              name: 'Track.mp3',
+              path: 'C:\\Music\\Track.mp3'
+            }
+          ]
+        }
+      ],
+      playback: {
+        ...createDefaultAppState().playback,
+        currentTrackId: 'imported-track',
+        context: { source: 'library' as const, containerId: 'imported-playlist' },
+        positionSeconds: 37,
+        paused: false
+      }
+    }
+    await new AppStateStore(legacyPath).save(state)
+
+    const loaded = await new AppStateStore(stablePath, [legacyPath]).load()
+
+    expect(loaded.state.library).toEqual(state.library)
+    expect(loaded.state.playback).toMatchObject({
+      currentTrackId: 'imported-track',
+      positionSeconds: 37,
+      paused: true
+    })
+    expect(JSON.parse(await readFile(stablePath, 'utf8')).library).toEqual(state.library)
+  })
+
+  it('restores readable legacy state when writing the migration fails', async () => {
+    const directory = await mkdtemp(join(tmpdir(), 'sn-state-migration-failure-'))
+    temporaryDirectories.push(directory)
+    const legacyPath = join(directory, 'legacy', 'state.json')
+    const blockingParentPath = join(directory, 'not-a-directory')
+    const stablePath = join(blockingParentPath, 'state.json')
+    const state = {
+      ...createDefaultAppState(),
+      library: [
+        {
+          id: 'legacy-track',
+          type: 'track' as const,
+          name: 'Legacy.mp3',
+          path: 'C:\\Music\\Legacy.mp3'
+        }
+      ]
+    }
+    await new AppStateStore(legacyPath).save(state)
+    await writeFile(blockingParentPath, 'block directory creation')
+
+    const loaded = await new AppStateStore(stablePath, [legacyPath]).load()
+
+    expect(loaded.state.library).toEqual(state.library)
+    expect(loaded.warning).toMatch(/已恢复早期版本/)
+  })
 })

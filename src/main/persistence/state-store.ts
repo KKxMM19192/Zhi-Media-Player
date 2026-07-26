@@ -15,28 +15,45 @@ export interface LoadedAppState {
 export class AppStateStore {
   private saveQueue: Promise<void> = Promise.resolve()
 
-  public constructor(private readonly filePath: string) {}
+  public constructor(
+    private readonly filePath: string,
+    private readonly fallbackFilePaths: readonly string[] = []
+  ) {}
 
   public async load(): Promise<LoadedAppState> {
     try {
-      const contents = await readFile(this.filePath, 'utf8')
-      const state = parsePersistedAppState(JSON.parse(contents) as unknown)
-      return {
-        state: {
-          ...state,
-          playback: { ...state.playback, paused: true }
-        },
-        warning: null
-      }
+      return this.createLoadedState(await this.readState(this.filePath))
     } catch (error) {
-      if ((error as NodeJS.ErrnoException).code === 'ENOENT') {
-        return { state: createDefaultAppState(), warning: null }
+      if ((error as NodeJS.ErrnoException).code !== 'ENOENT') {
+        return this.createRecoveryState()
       }
 
-      return {
-        state: createDefaultAppState(),
-        warning: '无法读取上次保存的应用状态，已使用安全的空白状态启动。原文件未被覆盖。'
+      for (const fallbackFilePath of this.fallbackFilePaths) {
+        if (fallbackFilePath === this.filePath) {
+          continue
+        }
+        let state: PersistedAppState
+        try {
+          state = await this.readState(fallbackFilePath)
+        } catch (fallbackError) {
+          if ((fallbackError as NodeJS.ErrnoException).code !== 'ENOENT') {
+            return this.createRecoveryState()
+          }
+          continue
+        }
+
+        try {
+          await this.save(state)
+          return this.createLoadedState(state)
+        } catch {
+          return this.createLoadedState(
+            state,
+            '已恢复早期版本保存的应用状态，但暂时无法迁移到新的状态目录。原文件未被覆盖。'
+          )
+        }
       }
+
+      return { state: createDefaultAppState(), warning: null }
     }
   }
 
@@ -63,5 +80,30 @@ export class AppStateStore {
 
     this.saveQueue = saveOperation.catch(() => undefined)
     return saveOperation
+  }
+
+  private async readState(filePath: string): Promise<PersistedAppState> {
+    const contents = await readFile(filePath, 'utf8')
+    return parsePersistedAppState(JSON.parse(contents) as unknown)
+  }
+
+  private createLoadedState(
+    state: PersistedAppState,
+    warning: string | null = null
+  ): LoadedAppState {
+    return {
+      state: {
+        ...state,
+        playback: { ...state.playback, paused: true }
+      },
+      warning
+    }
+  }
+
+  private createRecoveryState(): LoadedAppState {
+    return {
+      state: createDefaultAppState(),
+      warning: '无法读取上次保存的应用状态，已使用安全的空白状态启动。原文件未被覆盖。'
+    }
   }
 }
