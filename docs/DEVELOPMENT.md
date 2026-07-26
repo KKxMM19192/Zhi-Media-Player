@@ -7,6 +7,7 @@ Silent Nocturne 是一个使用 Electron、Vue 3 和 TypeScript 开发的本地�
 | 主题 | 文档 | 内容 |
 | --- | --- | --- |
 | 提交 | [提交指南](guidelines/commit-guidelines.md) | 约定式提交的格式与要求 |
+| 核心播放架构 | [核心播放架构](architecture/core-playback.md) | 音乐树、进程边界、媒体访问与持久化 |
 
 ## 开发环境
 

@@ -6,6 +6,12 @@ import vueParser from 'vue-eslint-parser'
 
 const runtimeGlobals = {
   Buffer: 'readonly',
+  DragEvent: 'readonly',
+  Event: 'readonly',
+  HTMLAudioElement: 'readonly',
+  HTMLElement: 'readonly',
+  HTMLInputElement: 'readonly',
+  MouseEvent: 'readonly',
   URL: 'readonly',
   __dirname: 'readonly',
   clearTimeout: 'readonly',

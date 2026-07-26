@@ -1,8 +1,14 @@
 import { app, BrowserWindow, shell } from 'electron'
 import { join } from 'node:path'
 import icon from '../../resources/icon.png?asset'
+import { registerAppIpc } from './ipc/register-app-ipc'
+import { MediaAccessPolicy } from './media/media-access'
+import { registerMediaProtocol, registerMediaScheme } from './media/protocol'
 
 const allowedExternalProtocols = new Set(['http:', 'https:'])
+const mediaAccessPolicy = new MediaAccessPolicy()
+
+registerMediaScheme()
 
 function isAllowedExternalUrl(rawUrl: string): boolean {
   try {
@@ -39,6 +45,10 @@ function createWindow(): void {
     return { action: 'deny' }
   })
 
+  mainWindow.webContents.on('will-navigate', (event) => {
+    event.preventDefault()
+  })
+
   if (!app.isPackaged && process.env.ELECTRON_RENDERER_URL) {
     void mainWindow.loadURL(process.env.ELECTRON_RENDERER_URL)
   } else {
@@ -47,6 +57,8 @@ function createWindow(): void {
 }
 
 app.whenReady().then(() => {
+  registerMediaProtocol(mediaAccessPolicy)
+  registerAppIpc(mediaAccessPolicy)
   createWindow()
 
   app.on('activate', () => {
