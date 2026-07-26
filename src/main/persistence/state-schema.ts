@@ -1,6 +1,8 @@
 import { isAbsolute, win32 } from 'node:path'
 import {
   APP_STATE_SCHEMA_VERSION,
+  MAX_PERSISTED_TREE_DEPTH,
+  MAX_PERSISTED_TREE_NODE_COUNT,
   type PersistedAppState
 } from '../../shared/domain/app-state'
 import type { MusicTreeNode } from '../../shared/domain/music-tree'
@@ -23,14 +25,14 @@ function validateNodes(
   depth = 0,
   counter = { value: 0 }
 ): value is MusicTreeNode[] {
-  if (!Array.isArray(value) || depth > 64) {
+  if (!Array.isArray(value) || depth > MAX_PERSISTED_TREE_DEPTH) {
     return false
   }
 
   return value.every((node) => {
     counter.value += 1
     if (
-      counter.value > 50_000 ||
+      counter.value > MAX_PERSISTED_TREE_NODE_COUNT ||
       !isRecord(node) ||
       typeof node.id !== 'string' ||
       node.id.length === 0 ||

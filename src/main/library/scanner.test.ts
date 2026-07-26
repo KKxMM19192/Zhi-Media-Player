@@ -42,4 +42,15 @@ describe('music folder scanner', () => {
 
     expect(await scanMusicFolders([root])).toEqual([])
   })
+
+  it('rejects imports that exceed the persisted tree node limit', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'sn-scan-limit-'))
+    temporaryDirectories.push(root)
+    await writeFile(join(root, 'A.mp3'), '')
+    await writeFile(join(root, 'B.mp3'), '')
+
+    await expect(
+      scanMusicFolders([root], { maximumDirectoryDepth: 63, maximumNodeCount: 2 })
+    ).rejects.toThrow(/exceeds 2 nodes/)
+  })
 })

@@ -53,6 +53,26 @@ export function flattenTree(nodes: readonly MusicTreeNode[]): MusicTreeNode[] {
   return flattened
 }
 
+export function isWithinTreeNodeLimit(
+  nodes: readonly MusicTreeNode[],
+  maximumNodeCount: number
+): boolean {
+  let nodeCount = 0
+  const visit = (siblings: readonly MusicTreeNode[]): boolean => {
+    for (const node of siblings) {
+      nodeCount += 1
+      if (nodeCount > maximumNodeCount) {
+        return false
+      }
+      if (node.type === 'playlist' && !visit(node.children)) {
+        return false
+      }
+    }
+    return true
+  }
+  return visit(nodes)
+}
+
 export function flattenTracks(nodes: readonly MusicTreeNode[]): TrackNode[] {
   return flattenTree(nodes).filter((node): node is TrackNode => node.type === 'track')
 }

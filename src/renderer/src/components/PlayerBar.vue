@@ -14,6 +14,7 @@ const {
   coverDataUrl
 } = storeToRefs(store)
 const audio = ref<HTMLAudioElement | null>(null)
+const mediaLoading = ref(false)
 let mediaRequest = 0
 
 const progressMaximum = computed(() => Math.max(durationSeconds.value, positionSeconds.value, 1))
@@ -35,10 +36,11 @@ watch(
     if (!element) {
       return
     }
+    mediaLoading.value = Boolean(track)
     element.pause()
     element.removeAttribute('src')
-    element.load()
     if (!track) {
+      mediaLoading.value = false
       return
     }
 
@@ -50,7 +52,10 @@ watch(
       element.src = mediaUrl
       element.load()
     } catch {
-      store.markPlaybackError()
+      if (request === mediaRequest && currentTrack.value?.id === track.id) {
+        mediaLoading.value = false
+        store.markPlaybackError()
+      }
     }
   },
   { immediate: true, flush: 'post' }
@@ -63,6 +68,9 @@ watch(paused, async (isPaused) => {
   }
   if (isPaused) {
     element.pause()
+    return
+  }
+  if (mediaLoading.value || !element.currentSrc) {
     return
   }
   try {
@@ -84,6 +92,7 @@ function handleLoadedMetadata(): void {
     return
   }
   audio.value.volume = volume.value
+  mediaLoading.value = false
   store.updateDuration(audio.value.duration)
   if (positionSeconds.value > 0 && positionSeconds.value < audio.value.duration) {
     audio.value.currentTime = positionSeconds.value
@@ -91,6 +100,7 @@ function handleLoadedMetadata(): void {
   if (!paused.value) {
     void audio.value.play().catch(() => {
       store.paused = true
+      store.errorMessage = '系统未能开始播放，请重试或检查音频输出。'
     })
   }
 }

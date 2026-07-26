@@ -5,6 +5,7 @@ import {
   containsAnyNode,
   flattenTracks,
   getSelectionState,
+  isWithinTreeNodeLimit,
   moveNodes,
   normalizeSelectedRootIds,
   removeNodes,
@@ -114,5 +115,10 @@ describe('music tree', () => {
     expect(removed.removed).toEqual([tree[0]])
     expect(containsAnyNode(tree, removed.rootIds, 'track-d')).toBe(true)
     expect(flattenTracks(removed.nodes).map((node) => node.id)).toEqual(['track-e'])
+  })
+
+  it('checks the complete merged tree against a node budget', () => {
+    expect(isWithinTreeNodeLimit(tree, 5)).toBe(true)
+    expect(isWithinTreeNodeLimit(tree, 4)).toBe(false)
   })
 })

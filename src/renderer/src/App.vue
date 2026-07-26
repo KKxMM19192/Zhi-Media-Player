@@ -61,13 +61,6 @@ function activate(source: PlaybackSource, nodeId: NodeId): void {
     if (!expandedNodeIds.value.has(node.id)) {
       store.toggleExpanded(node.id)
     }
-    const firstTrack =
-      source === 'library'
-        ? node.children.find((child) => child.type === 'track')
-        : flattenTracks([node])[0]
-    if (firstTrack) {
-      void store.playTrack(firstTrack.id, source)
-    }
   } else {
     void store.playTrack(node.id, source)
   }
@@ -87,8 +80,18 @@ function closeContextMenu(): void {
 }
 
 function contextPlay(): void {
-  if (contextMenu.nodeId) {
-    activate(contextMenu.source, contextMenu.nodeId)
+  const roots = contextMenu.source === 'queue' ? queue.value : library.value
+  const node = contextMenu.nodeId ? findNode(roots, contextMenu.nodeId) : undefined
+  if (node?.type === 'track') {
+    void store.playTrack(node.id, contextMenu.source)
+  } else if (node?.type === 'playlist') {
+    const firstTrack =
+      contextMenu.source === 'library'
+        ? node.children.find((child) => child.type === 'track')
+        : flattenTracks([node])[0]
+    if (firstTrack) {
+      void store.playTrack(firstTrack.id, contextMenu.source)
+    }
   }
   closeContextMenu()
 }

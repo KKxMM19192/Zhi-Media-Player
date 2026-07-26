@@ -2,6 +2,8 @@ import type { MusicTreeNode, NodeId } from './music-tree'
 import type { PlaybackContext, PlaybackMode } from './playback'
 
 export const APP_STATE_SCHEMA_VERSION = 1 as const
+export const MAX_PERSISTED_TREE_DEPTH = 64
+export const MAX_PERSISTED_TREE_NODE_COUNT = 50_000
 
 export interface PlaybackSnapshot {
   readonly currentTrackId: NodeId | null

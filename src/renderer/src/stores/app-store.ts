@@ -2,6 +2,7 @@ import { computed, ref } from 'vue'
 import { defineStore } from 'pinia'
 import {
   APP_STATE_SCHEMA_VERSION,
+  MAX_PERSISTED_TREE_NODE_COUNT,
   createDefaultAppState,
   type PersistedAppState
 } from '../../../shared/domain/app-state'
@@ -12,6 +13,7 @@ import {
   findNode,
   findNodeLocation,
   flattenTracks,
+  isWithinTreeNodeLimit,
   insertNodes,
   moveNodes,
   normalizeSelectedRootIds,
@@ -77,6 +79,7 @@ export const useAppStore = defineStore('app', () => {
   const errorMessage = ref<string | null>(null)
   let saveTimer: number | undefined
   let messageTimer: number | undefined
+  let playbackRequest = 0
 
   const currentTrack = computed<TrackNode | null>(() => {
     if (!currentTrackId.value || !playbackContext.value) {
@@ -101,6 +104,14 @@ export const useAppStore = defineStore('app', () => {
 
   function showError(error: unknown, fallback: string): void {
     errorMessage.value = error instanceof Error && error.message ? error.message : fallback
+  }
+
+  function acceptsTreeSize(nodes: readonly MusicTreeNode[], label: string): boolean {
+    if (isWithinTreeNodeLimit(nodes, MAX_PERSISTED_TREE_NODE_COUNT)) {
+      return true
+    }
+    errorMessage.value = `${label}超过 ${MAX_PERSISTED_TREE_NODE_COUNT} 个节点的安全上限，本次操作未应用。`
+    return false
   }
 
   function snapshot(): PersistedAppState {
@@ -135,6 +146,18 @@ export const useAppStore = defineStore('app', () => {
     }, 180)
   }
 
+  function scheduleProgressSave(): void {
+    if (!initialized.value || saveTimer !== undefined) {
+      return
+    }
+    saveTimer = window.setTimeout(() => {
+      saveTimer = undefined
+      void window.silentNocturne
+        .saveState(snapshot())
+        .catch((error: unknown) => showError(error, '保存播放进度失败。'))
+    }, 5000)
+  }
+
   async function flushState(): Promise<void> {
     if (saveTimer !== undefined) {
       window.clearTimeout(saveTimer)
@@ -160,6 +183,26 @@ export const useAppStore = defineStore('app', () => {
 
       if (currentTrackId.value && !currentTrack.value) {
         stopPlayback()
+      } else if (currentTrack.value) {
+        const restoredTrackId = currentTrack.value.id
+        const available = await window.silentNocturne.checkTrack(currentTrack.value.path)
+        if (!available && currentTrack.value?.id === restoredTrackId) {
+          unavailableNodeIds.value = new Set([...unavailableNodeIds.value, restoredTrackId])
+          stopPlayback()
+          errorMessage.value = `无法恢复“${currentTrack.value?.name ?? '上次播放的音乐'}”：本地文件已不可用。`
+        } else if (currentTrack.value?.id === restoredTrackId) {
+          try {
+            const metadata = await window.silentNocturne.getTrackMetadata(currentTrack.value.path)
+            if (currentTrack.value?.id === restoredTrackId) {
+              durationSeconds.value = metadata.durationSeconds ?? 0
+              coverDataUrl.value = metadata.coverDataUrl
+            }
+          } catch {
+            if (currentTrack.value?.id === restoredTrackId) {
+              coverDataUrl.value = null
+            }
+          }
+        }
       }
       if (loaded.warning) {
         errorMessage.value = loaded.warning
@@ -178,7 +221,11 @@ export const useAppStore = defineStore('app', () => {
       if (imported.length === 0) {
         return
       }
-      library.value = [...library.value, ...imported]
+      const nextLibrary = [...library.value, ...imported]
+      if (!acceptsTreeSize(nextLibrary, '分类歌单')) {
+        return
+      }
+      library.value = nextLibrary
       imported.forEach((node) => expandedNodeIds.value.add(node.id))
       scheduleSave()
       showMessage(`已导入 ${imported.length} 个音乐文件夹。`)
@@ -199,7 +246,11 @@ export const useAppStore = defineStore('app', () => {
       const additions = imported.filter(
         (track) => !directPaths.some((path) => isSamePath(path, track.path))
       )
-      library.value = [...library.value, ...additions]
+      const nextLibrary = [...library.value, ...additions]
+      if (!acceptsTreeSize(nextLibrary, '分类歌单')) {
+        return
+      }
+      library.value = nextLibrary
       scheduleSave()
       const skipped = imported.length - additions.length
       showMessage(
@@ -259,12 +310,19 @@ export const useAppStore = defineStore('app', () => {
   }
 
   async function playTrack(trackId: NodeId, source: PlaybackSource): Promise<void> {
+    const request = ++playbackRequest
     const node = findNode(rootsFor(source), trackId)
     if (!node || node.type !== 'track') {
       return
     }
 
     const available = await window.silentNocturne.checkTrack(node.path)
+    if (
+      request !== playbackRequest ||
+      findNode(rootsFor(source), trackId)?.type !== 'track'
+    ) {
+      return
+    }
     if (!available) {
       unavailableNodeIds.value = new Set([...unavailableNodeIds.value, node.id])
       stopPlayback()
@@ -284,16 +342,21 @@ export const useAppStore = defineStore('app', () => {
     coverDataUrl.value = null
     try {
       const metadata = await window.silentNocturne.getTrackMetadata(node.path)
-      durationSeconds.value = metadata.durationSeconds ?? 0
-      coverDataUrl.value = metadata.coverDataUrl
+      if (request === playbackRequest && currentTrackId.value === node.id) {
+        durationSeconds.value = metadata.durationSeconds ?? 0
+        coverDataUrl.value = metadata.coverDataUrl
+      }
     } catch {
-      durationSeconds.value = 0
-      coverDataUrl.value = null
+      if (request === playbackRequest && currentTrackId.value === node.id) {
+        durationSeconds.value = 0
+        coverDataUrl.value = null
+      }
     }
     scheduleSave()
   }
 
   function stopPlayback(): void {
+    playbackRequest += 1
     currentTrackId.value = null
     playbackContext.value = null
     positionSeconds.value = 0
@@ -340,7 +403,7 @@ export const useAppStore = defineStore('app', () => {
 
   function updatePosition(value: number): void {
     positionSeconds.value = Number.isFinite(value) ? Math.max(0, value) : 0
-    scheduleSave()
+    scheduleProgressSave()
   }
 
   function updateDuration(value: number): void {
@@ -392,11 +455,15 @@ export const useAppStore = defineStore('app', () => {
       return
     }
     const copies = cloneTreeWithNewIds(selectedNodes)
-    queue.value = insertNodes(
+    const nextQueue = insertNodes(
       queue.value,
       copies,
       destination ?? { parentId: null, index: queue.value.length }
     )
+    if (!acceptsTreeSize(nextQueue, '当前播放队列')) {
+      return
+    }
+    queue.value = nextQueue
     selectedQueueIds.value = new Set(copies.flatMap(collectSubtreeIds))
     scheduleSave()
     showMessage(`已向播放队列加入 ${flattenTracks(copies).length} 首音乐。`)
@@ -428,11 +495,15 @@ export const useAppStore = defineStore('app', () => {
         const sourceNodes = payload.nodeIds
           .map((nodeId) => findNode(library.value, nodeId))
           .filter((node): node is MusicTreeNode => node !== undefined)
-        queue.value = insertNodes(
+        const nextQueue = insertNodes(
           queue.value,
           cloneTreeWithNewIds(sourceNodes),
           destination
         )
+        if (!acceptsTreeSize(nextQueue, '当前播放队列')) {
+          return
+        }
+        queue.value = nextQueue
       } else {
         queue.value = moveNodes(queue.value, new Set(payload.nodeIds), destination)
       }

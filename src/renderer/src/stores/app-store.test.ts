@@ -1,3 +1,5 @@
+// @vitest-environment jsdom
+
 import { createPinia, setActivePinia } from 'pinia'
 import { beforeEach, describe, expect, it } from 'vitest'
 import type { MusicTreeNode } from '../../../shared/domain/music-tree'
@@ -19,6 +21,13 @@ const queue: MusicTreeNode[] = [
 describe('app store queue editing', () => {
   beforeEach(() => {
     setActivePinia(createPinia())
+    Object.defineProperty(window, 'silentNocturne', {
+      configurable: true,
+      value: {
+        checkTrack: async () => true,
+        getTrackMetadata: async () => ({ durationSeconds: null, coverDataUrl: null })
+      }
+    })
   })
 
   it('stops and clears playback when deleting the current track ancestor', () => {
@@ -50,5 +59,29 @@ describe('app store queue editing', () => {
     expect(store.currentTrackId).toBe('current')
     expect(store.currentTrack?.id).toBe('current')
     expect(store.queue.map((node) => node.id)).toEqual(['last', 'playlist'])
+  })
+
+  it('ignores an older play request that finishes after a newer selection', async () => {
+    let resolveFirstCheck: ((available: boolean) => void) | undefined
+    const firstCheck = new Promise<boolean>((resolve) => {
+      resolveFirstCheck = resolve
+    })
+    Object.defineProperty(window, 'silentNocturne', {
+      configurable: true,
+      value: {
+        checkTrack: (path: string) =>
+          path.endsWith('Current.mp3') ? firstCheck : Promise.resolve(true),
+        getTrackMetadata: async () => ({ durationSeconds: null, coverDataUrl: null })
+      }
+    })
+    const store = useAppStore()
+    store.queue = queue
+
+    const olderRequest = store.playTrack('current', 'queue')
+    await store.playTrack('next', 'queue')
+    resolveFirstCheck?.(true)
+    await olderRequest
+
+    expect(store.currentTrackId).toBe('next')
   })
 })
