@@ -22,6 +22,7 @@ const props = withDefaults(
     selectedIds: ReadonlySet<NodeId>
     expandedIds: ReadonlySet<NodeId>
     unavailableIds: ReadonlySet<NodeId>
+    currentTrackId?: NodeId | null
     parentId?: NodeId | null
     compact?: boolean
     dragActive?: boolean
@@ -29,6 +30,7 @@ const props = withDefaults(
     allowDrop?: boolean
   }>(),
   {
+    currentTrackId: null,
     parentId: null,
     compact: false,
     dragActive: false,
@@ -142,9 +144,11 @@ function handleLevelDrop(event: DragEvent): void {
         class="tree-row"
         :class="{
           'tree-row--selected': !readonly && selectedIds.has(node.id),
+          'tree-row--current': currentTrackId === node.id,
           'tree-row--unavailable': unavailableIds.has(node.id),
           [`tree-row--drop-${activeDrop?.position}`]: activeDrop?.nodeId === node.id
         }"
+        :aria-current="currentTrackId === node.id ? 'true' : undefined"
         :draggable="!readonly"
         @click="!readonly && emit('toggleSelection', source, node.id)"
         @dblclick.stop="!readonly && emit('activate', source, node.id)"
@@ -183,12 +187,27 @@ function handleLevelDrop(event: DragEvent): void {
         <span class="tree-name" :title="node.type === 'track' ? node.path : node.name">
           {{ node.name }}
         </span>
-        <AlertTriangle
-          v-if="node.type === 'track' && unavailableIds.has(node.id)"
-          class="tree-warning"
-          :size="17"
-          aria-label="文件不可用"
-        />
+        <span
+          v-if="
+            node.type === 'track' &&
+            (unavailableIds.has(node.id) || currentTrackId === node.id)
+          "
+          class="tree-indicators"
+        >
+          <AlertTriangle
+            v-if="unavailableIds.has(node.id)"
+            class="tree-warning"
+            :size="17"
+            aria-label="文件不可用"
+          />
+          <span
+            v-if="currentTrackId === node.id"
+            class="tree-current-badge"
+            aria-label="当前音乐"
+          >
+            当前
+          </span>
+        </span>
       </div>
 
       <MusicTree
@@ -198,6 +217,7 @@ function handleLevelDrop(event: DragEvent): void {
         :selected-ids="selectedIds"
         :expanded-ids="expandedIds"
         :unavailable-ids="unavailableIds"
+        :current-track-id="currentTrackId"
         :parent-id="node.id"
         :compact="compact"
         :drag-active="dragActive"

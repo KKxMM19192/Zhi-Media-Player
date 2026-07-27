@@ -499,6 +499,11 @@ button:disabled {
   background: var(--sn-accent-soft);
 }
 
+.tree-row--current {
+  border-color: rgb(245 133 61 / 52%);
+  box-shadow: inset 3px 0 var(--sn-accent);
+}
+
 .tree-row--unavailable .tree-name {
   color: var(--sn-danger);
   text-decoration: line-through;
@@ -580,6 +585,23 @@ button:disabled {
 
 .tree-warning {
   color: var(--sn-danger);
+}
+
+.tree-indicators {
+  display: inline-flex;
+  gap: 7px;
+  align-items: center;
+}
+
+.tree-current-badge {
+  padding: 2px 7px;
+  border: 1px solid rgb(245 133 61 / 42%);
+  border-radius: 999px;
+  color: #ffd1b3;
+  font-size: 10px;
+  font-weight: 700;
+  line-height: 1.4;
+  background: rgb(245 133 61 / 14%);
 }
 
 .tree-root-drop,

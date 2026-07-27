@@ -20,7 +20,9 @@ const {
   expandedNodeIds,
   unavailableNodeIds,
   queueTrackCount,
-  dragPayload
+  dragPayload,
+  currentTrackId,
+  playbackContext
 } = storeToRefs(store)
 
 function destinationFor(targetId: NodeId, position: 'before' | 'inside' | 'after'): TreeDestination | null {
@@ -79,6 +81,7 @@ function handleRootDragOver(event: DragEvent): void {
         :selected-ids="selectedQueueIds"
         :expanded-ids="expandedNodeIds"
         :unavailable-ids="unavailableNodeIds"
+        :current-track-id="playbackContext?.source === 'queue' ? currentTrackId : null"
         :drag-active="Boolean(dragPayload)"
         @toggle-selection="store.toggleSelection"
         @toggle-expanded="store.toggleExpanded"

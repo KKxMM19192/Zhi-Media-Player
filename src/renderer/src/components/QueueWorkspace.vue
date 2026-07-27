@@ -41,7 +41,9 @@ const {
   selectedSavedIds,
   expandedNodeIds,
   unavailableNodeIds,
-  dragPayload
+  dragPayload,
+  currentTrackId,
+  playbackContext
 } = storeToRefs(store)
 const saveName = ref('')
 const historySaveName = ref('')
@@ -265,6 +267,7 @@ function openSavedQueueMenu(event: MouseEvent, savedQueueId: NodeId): void {
           :selected-ids="selectedQueueIds"
           :expanded-ids="expandedNodeIds"
           :unavailable-ids="unavailableNodeIds"
+          :current-track-id="playbackContext?.source === 'queue' ? currentTrackId : null"
           :drag-active="Boolean(dragPayload)"
           @toggle-selection="store.toggleSelection"
           @toggle-expanded="store.toggleExpanded"

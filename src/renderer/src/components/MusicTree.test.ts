@@ -76,6 +76,33 @@ describe('MusicTree', () => {
     expect(wrapper.emitted('openContext')?.[0]?.slice(1)).toEqual(['saved', 'track-1'])
   })
 
+  it('marks the current node by ID when tracks have the same display name', () => {
+    const wrapper = mount(MusicTree, {
+      props: {
+        nodes: [
+          track,
+          {
+            ...track,
+            id: 'track-2',
+            path: 'D:\\Music\\Track 1.mp3'
+          }
+        ],
+        source: 'queue',
+        selectedIds: new Set<string>(),
+        expandedIds: new Set<string>(),
+        unavailableIds: new Set<string>(),
+        currentTrackId: 'track-2'
+      }
+    })
+
+    const currentRows = wrapper.findAll('.tree-row--current')
+    expect(currentRows).toHaveLength(1)
+    expect(currentRows[0]?.get('.tree-name').text()).toBe('Track 1.mp3')
+    expect(currentRows[0]?.get('.tree-current-badge').text()).toBe('当前')
+    expect(currentRows[0]?.attributes('aria-current')).toBe('true')
+    expect(wrapper.findAll('.tree-current-badge')).toHaveLength(1)
+  })
+
   it('emits distinct node drop events for external files and internal drags', () => {
     const wrapper = mount(MusicTree, {
       props: {
