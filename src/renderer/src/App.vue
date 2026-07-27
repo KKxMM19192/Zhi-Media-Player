@@ -1,47 +1,41 @@
 <script setup lang="ts">
-import { onMounted, reactive } from 'vue'
+import { computed, onMounted, reactive, ref } from 'vue'
 import { storeToRefs } from 'pinia'
 import {
-  FolderPlus,
   Library,
   ListMusic,
-  Menu,
   Music2,
   PanelRightClose,
   PanelRightOpen,
-  Plus,
-  Trash2,
-  X
+  RefreshCw,
+  Route,
+  Settings
 } from '@lucide/vue'
-import MusicTree from './components/MusicTree.vue'
+import { findNode, flattenTracks, type NodeId } from '../../shared/domain/music-tree'
+import LibraryWorkspace from './components/LibraryWorkspace.vue'
 import PlayerBar from './components/PlayerBar.vue'
-import { flattenTracks, findNode, type NodeId } from '../../shared/domain/music-tree'
-import type { PlaybackSource } from '../../shared/domain/playback'
-import { useAppStore } from './stores/app-store'
+import QueueDrawer from './components/QueueDrawer.vue'
+import QueueWorkspace from './components/QueueWorkspace.vue'
+import { useAppStore, type TreeSource } from './stores/app-store'
 
 const store = useAppStore()
 const {
-  initialized,
-  busy,
   page,
   queueDrawerOpen,
-  library,
   queue,
-  selectedLibraryIds,
-  selectedQueueIds,
+  activeSavedQueue,
   expandedNodeIds,
-  unavailableNodeIds,
   queueTrackCount,
-  dragPayload,
   message,
+  modeMessage,
   errorMessage
 } = storeToRefs(store)
-
+const settingsOpen = ref(false)
 const contextMenu = reactive<{
   open: boolean
   x: number
   y: number
-  source: PlaybackSource
+  source: TreeSource
   nodeId: NodeId | null
 }>({
   open: false,
@@ -51,10 +45,15 @@ const contextMenu = reactive<{
   nodeId: null
 })
 
-function activate(source: PlaybackSource, nodeId: NodeId): void {
+const contextNode = computed(() =>
+  contextMenu.nodeId
+    ? findNode(store.rootsFor(contextMenu.source), contextMenu.nodeId)
+    : undefined
+)
+
+function activate(source: TreeSource, nodeId: NodeId): void {
   store.selectForContextMenu(source, nodeId)
-  const roots = source === 'queue' ? queue.value : library.value
-  const node = findNode(roots, nodeId)
+  const node = findNode(store.rootsFor(source), nodeId)
   if (!node) {
     return
   }
@@ -62,65 +61,79 @@ function activate(source: PlaybackSource, nodeId: NodeId): void {
     if (!expandedNodeIds.value.has(node.id)) {
       store.toggleExpanded(node.id)
     }
+  } else if (source === 'saved') {
+    if (activeSavedQueue.value) {
+      void store.playSavedNode(activeSavedQueue.value.id, node.id)
+    }
   } else {
     void store.playTrack(node.id, source)
   }
 }
 
-function openContextMenu(event: MouseEvent, source: PlaybackSource, nodeId: NodeId): void {
+function openContextMenu(event: MouseEvent, source: TreeSource, nodeId: NodeId): void {
   store.selectForContextMenu(source, nodeId)
   contextMenu.open = true
-  contextMenu.x = Math.min(event.clientX, window.innerWidth - 190)
-  contextMenu.y = Math.min(event.clientY, window.innerHeight - 210)
+  contextMenu.x = Math.min(event.clientX, window.innerWidth - 220)
+  contextMenu.y = Math.min(event.clientY, window.innerHeight - 280)
   contextMenu.source = source
   contextMenu.nodeId = nodeId
+  settingsOpen.value = false
 }
 
-function closeContextMenu(): void {
+function closeMenus(): void {
   contextMenu.open = false
+  settingsOpen.value = false
 }
 
 function contextPlay(): void {
-  const roots = contextMenu.source === 'queue' ? queue.value : library.value
-  const node = contextMenu.nodeId ? findNode(roots, contextMenu.nodeId) : undefined
-  if (node?.type === 'track') {
-    void store.playTrack(node.id, contextMenu.source)
-  } else if (node?.type === 'playlist') {
-    const firstTrack =
-      contextMenu.source === 'library'
+  const node = contextNode.value
+  const source = contextMenu.source
+  if (!node) {
+    return
+  }
+  if (source === 'saved') {
+    if (activeSavedQueue.value) {
+      void store.playSavedNode(activeSavedQueue.value.id, node.id)
+    }
+  } else {
+    const firstTrack = node.type === 'track'
+      ? node
+      : source === 'library'
         ? node.children.find((child) => child.type === 'track')
         : flattenTracks([node])[0]
     if (firstTrack) {
-      void store.playTrack(firstTrack.id, contextMenu.source)
+      void store.playTrack(firstTrack.id, source)
     }
   }
-  closeContextMenu()
+  closeMenus()
 }
 
 function contextAddToQueue(): void {
-  store.addSelectedLibraryToQueue()
+  if (contextMenu.source === 'library') {
+    store.addSelectedLibraryToQueue()
+  } else if (contextMenu.source === 'saved' && contextMenu.nodeId) {
+    store.beginDrag('saved', contextMenu.nodeId)
+    store.dropIntoQueue({ parentId: null, index: queue.value.length })
+  }
   queueDrawerOpen.value = true
-  closeContextMenu()
+  closeMenus()
+}
+
+function contextRepair(): void {
+  if (contextMenu.nodeId) {
+    void store.repairTrack(contextMenu.source, contextMenu.nodeId)
+  }
+  closeMenus()
+}
+
+function contextFolderRepair(): void {
+  void store.repairSelectedFromFolder(contextMenu.source)
+  closeMenus()
 }
 
 function contextDelete(): void {
   store.deleteSelected(contextMenu.source)
-  closeContextMenu()
-}
-
-function dropOnNode(targetId: NodeId, position: 'before' | 'inside' | 'after'): void {
-  const destination = store.destinationFor(targetId, position)
-  if (destination) {
-    store.dropIntoQueue(destination)
-  }
-}
-
-function dropAtLevel(parentId: NodeId | null, index: number): void {
-  store.dropIntoQueue({ parentId, index })
-}
-
-function dropAtRoot(): void {
-  dropAtLevel(null, queue.value.length)
+  closeMenus()
 }
 
 onMounted(() => {
@@ -132,27 +145,29 @@ onMounted(() => {
 </script>
 
 <template>
-  <div class="app-shell" @click="closeContextMenu">
+  <div class="app-shell" @click="closeMenus" @dragover.prevent @drop.prevent>
     <header class="app-header">
-      <div class="app-brand">
-        <Music2 :size="20" aria-hidden="true" />
-        <span>Silent Nocturne</span>
+      <div class="brand-zone">
+        <button
+          class="icon-button"
+          type="button"
+          aria-label="设置与索引维护"
+          @click.stop="settingsOpen = !settingsOpen"
+        >
+          <Settings :size="19" />
+        </button>
+        <div class="app-brand">
+          <Music2 :size="20" aria-hidden="true" />
+          <span>Silent Nocturne</span>
+        </div>
       </div>
 
       <nav class="primary-nav" aria-label="主要页面">
-        <button
-          type="button"
-          :class="{ active: page === 'library' }"
-          @click="page = 'library'"
-        >
+        <button type="button" :class="{ active: page === 'library' }" @click="page = 'library'">
           <Library :size="18" />
           分类歌单
         </button>
-        <button
-          type="button"
-          :class="{ active: page === 'queue' }"
-          @click="page = 'queue'"
-        >
+        <button type="button" :class="{ active: page === 'queue' }" @click="page = 'queue'">
           <ListMusic :size="18" />
           播放队列
           <span class="count-badge">{{ queueTrackCount }}</span>
@@ -173,175 +188,26 @@ onMounted(() => {
     </header>
 
     <main class="app-content">
-      <section v-if="page === 'library'" class="workspace">
-        <div class="workspace-heading">
-          <div>
-            <p class="eyebrow">LOCAL COLLECTION</p>
-            <h1>分类歌单</h1>
-            <p>组织本地索引；删除项目不会改动磁盘上的音乐文件。</p>
-          </div>
-          <div class="toolbar">
-            <button type="button" :disabled="busy" @click="store.importFolders">
-              <FolderPlus :size="18" />
-              导入文件夹
-            </button>
-            <button type="button" :disabled="busy" @click="store.importFiles">
-              <Plus :size="18" />
-              添加音乐
-            </button>
-            <button
-              type="button"
-              :disabled="selectedLibraryIds.size === 0"
-              @click="store.addSelectedLibraryToQueue()"
-            >
-              <ListMusic :size="18" />
-              加入队列
-            </button>
-            <button
-              class="danger-button"
-              type="button"
-              :disabled="selectedLibraryIds.size === 0"
-              @click="store.deleteSelected('library')"
-            >
-              <Trash2 :size="18" />
-              删除索引
-            </button>
-          </div>
-        </div>
-
-        <div class="tree-panel">
-          <div v-if="!initialized" class="empty-state">
-            <Menu :size="34" />
-            <p>正在载入应用状态…</p>
-          </div>
-          <div v-else-if="library.length === 0" class="empty-state">
-            <Library :size="40" />
-            <h2>导入第一份本地音乐</h2>
-            <p>选择包含 MP3 或 FLAC 的文件夹，目录层级会转换为歌单树。</p>
-            <button type="button" @click="store.importFolders">
-              <FolderPlus :size="18" />
-              导入音乐文件夹
-            </button>
-          </div>
-          <MusicTree
-            v-else
-            :nodes="library"
-            source="library"
-            :selected-ids="selectedLibraryIds"
-            :expanded-ids="expandedNodeIds"
-            :unavailable-ids="unavailableNodeIds"
-            @toggle-selection="store.toggleSelection"
-            @toggle-expanded="store.toggleExpanded"
-            @activate="activate"
-            @open-context="openContextMenu"
-            @begin-drag="store.beginDrag"
-            @end-drag="store.endDrag"
-          />
-        </div>
-      </section>
-
-      <section v-else class="workspace">
-        <div class="workspace-heading">
-          <div>
-            <p class="eyebrow">NOW PLAYING ORDER</p>
-            <h1>当前播放队列</h1>
-            <p>队列按界面从上到下递归展开；拖动可调整顺序和层级。</p>
-          </div>
-          <div class="toolbar">
-            <button
-              class="danger-button"
-              type="button"
-              :disabled="selectedQueueIds.size === 0"
-              @click="store.deleteSelected('queue')"
-            >
-              <Trash2 :size="18" />
-              删除
-            </button>
-          </div>
-        </div>
-        <div class="tree-panel tree-panel--queue">
-          <div v-if="queue.length === 0" class="empty-state">
-            <ListMusic :size="40" />
-            <h2>当前队列为空</h2>
-            <p>从分类歌单选择音乐或歌单，然后加入队列；也可以直接拖到这里。</p>
-          </div>
-          <MusicTree
-            v-else
-            :nodes="queue"
-            source="queue"
-            :selected-ids="selectedQueueIds"
-            :expanded-ids="expandedNodeIds"
-            :unavailable-ids="unavailableNodeIds"
-            :drag-active="Boolean(dragPayload)"
-            @toggle-selection="store.toggleSelection"
-            @toggle-expanded="store.toggleExpanded"
-            @activate="activate"
-            @open-context="openContextMenu"
-            @begin-drag="store.beginDrag"
-            @end-drag="store.endDrag"
-            @drop-node="dropOnNode"
-            @drop-level="dropAtLevel"
-          />
-          <div
-            class="panel-root-drop"
-            @dragover.prevent
-            @drop.prevent="dropAtRoot"
-          >
-            拖到空白处可追加到队列末尾
-          </div>
-        </div>
-      </section>
-
-      <aside class="queue-drawer" :class="{ open: queueDrawerOpen }" aria-label="当前播放队列">
-        <div class="drawer-header">
-          <div>
-            <span>当前播放队列</span>
-            <small>{{ queueTrackCount }} 首音乐</small>
-          </div>
-          <button class="icon-button" type="button" aria-label="关闭" @click="queueDrawerOpen = false">
-            <X :size="19" />
-          </button>
-        </div>
-        <div class="drawer-body">
-          <div
-            v-if="queue.length === 0"
-            class="drawer-empty"
-            @dragover.prevent
-            @drop.prevent="dropAtRoot"
-          >
-            从左侧拖入音乐或歌单
-          </div>
-          <MusicTree
-            v-else
-            compact
-            :nodes="queue"
-            source="queue"
-            :selected-ids="selectedQueueIds"
-            :expanded-ids="expandedNodeIds"
-            :unavailable-ids="unavailableNodeIds"
-            :drag-active="Boolean(dragPayload)"
-            @toggle-selection="store.toggleSelection"
-            @toggle-expanded="store.toggleExpanded"
-            @activate="activate"
-            @open-context="openContextMenu"
-            @begin-drag="store.beginDrag"
-            @end-drag="store.endDrag"
-            @drop-node="dropOnNode"
-            @drop-level="dropAtLevel"
-          />
-          <div
-            class="drawer-root-drop"
-            :class="{ 'drop-target--visible': dragPayload }"
-            @dragover.prevent
-            @drop.prevent="dropAtRoot"
-          >
-            拖到这里追加
-          </div>
-        </div>
-      </aside>
+      <LibraryWorkspace
+        v-if="page === 'library'"
+        @activate="activate"
+        @open-context="openContextMenu"
+      />
+      <QueueWorkspace v-else @activate="activate" @open-context="openContextMenu" />
+      <QueueDrawer @activate="activate" @open-context="openContextMenu" />
     </main>
 
     <PlayerBar />
+
+    <div v-if="settingsOpen" class="settings-menu" @click.stop>
+      <strong>索引维护</strong>
+      <button type="button" @click="store.refreshAvailability(true); settingsOpen = false">
+        <RefreshCw :size="16" />重新检查文件
+      </button>
+      <button type="button" @click="store.migrateMusicDirectory(); settingsOpen = false">
+        <Route :size="16" />迁移音乐目录
+      </button>
+    </div>
 
     <div
       v-if="contextMenu.open"
@@ -351,18 +217,23 @@ onMounted(() => {
     >
       <button type="button" @click="contextPlay">播放</button>
       <button
-        v-if="contextMenu.source === 'library'"
+        v-if="contextMenu.source === 'library' || contextMenu.source === 'saved'"
         type="button"
         @click="contextAddToQueue"
       >
         加入当前播放队列
       </button>
+      <button v-if="contextNode?.type === 'track'" type="button" @click="contextRepair">
+        修复此音乐索引
+      </button>
+      <button type="button" @click="contextFolderRepair">从文件夹匹配所选项目</button>
       <button type="button" class="danger-text" @click="contextDelete">
-        {{ contextMenu.source === 'library' ? '删除索引' : '从队列删除' }}
+        {{ contextMenu.source === 'library' ? '删除索引' : '删除所选项目' }}
       </button>
     </div>
 
     <div v-if="message" class="toast">{{ message }}</div>
+    <div v-if="modeMessage" class="mode-toast">播放模式：{{ modeMessage }}</div>
     <div v-if="errorMessage" class="error-dialog" role="alertdialog" aria-modal="true">
       <div class="error-card">
         <h2>操作未完成</h2>

@@ -6,47 +6,63 @@ import {
   type MusicTreeNode,
   type NodeId
 } from '../../../shared/domain/music-tree'
-import type { PlaybackSource } from '../../../shared/domain/playback'
+import {
+  applyTreeDropEffect,
+  isExternalFileDrag,
+  TREE_DRAG_TYPE_PREFIX
+} from '../drag-drop'
+import type { TreeSource } from '../stores/app-store'
 
 defineOptions({ name: 'MusicTree' })
 
 const props = withDefaults(
   defineProps<{
     nodes: readonly MusicTreeNode[]
-    source: PlaybackSource
+    source: TreeSource
     selectedIds: ReadonlySet<NodeId>
     expandedIds: ReadonlySet<NodeId>
     unavailableIds: ReadonlySet<NodeId>
     parentId?: NodeId | null
     compact?: boolean
     dragActive?: boolean
+    readonly?: boolean
+    allowDrop?: boolean
   }>(),
   {
     parentId: null,
     compact: false,
-    dragActive: false
+    dragActive: false,
+    readonly: false,
+    allowDrop: true
   }
 )
 
 const emit = defineEmits<{
-  toggleSelection: [source: PlaybackSource, nodeId: NodeId]
+  toggleSelection: [source: TreeSource, nodeId: NodeId]
   toggleExpanded: [nodeId: NodeId]
-  activate: [source: PlaybackSource, nodeId: NodeId]
-  openContext: [event: MouseEvent, source: PlaybackSource, nodeId: NodeId]
-  beginDrag: [source: PlaybackSource, nodeId: NodeId]
+  activate: [source: TreeSource, nodeId: NodeId]
+  openContext: [event: MouseEvent, source: TreeSource, nodeId: NodeId]
+  beginDrag: [source: TreeSource, nodeId: NodeId]
   endDrag: []
   dropNode: [targetId: NodeId, position: 'before' | 'inside' | 'after']
   dropLevel: [parentId: NodeId | null, index: number]
+  dropExternalNode: [files: File[], targetId: NodeId, position: 'before' | 'inside' | 'after']
+  dropExternalLevel: [files: File[], parentId: NodeId | null, index: number]
 }>()
 
 const activeDrop = ref<{ nodeId: NodeId; position: 'before' | 'inside' | 'after' } | null>(
   null
 )
+const externalDragActive = ref(false)
 
 function handleDragStart(event: DragEvent, nodeId: NodeId): void {
+  if (props.readonly) {
+    event.preventDefault()
+    return
+  }
   if (event.dataTransfer) {
-    event.dataTransfer.effectAllowed = props.source === 'queue' ? 'move' : 'copy'
-    event.dataTransfer.setData('application/x-silent-nocturne-tree', 'selection')
+    event.dataTransfer.effectAllowed = 'copyMove'
+    event.dataTransfer.setData(`${TREE_DRAG_TYPE_PREFIX}${props.source}`, 'selection')
   }
   emit('beginDrag', props.source, nodeId)
 }
@@ -64,39 +80,75 @@ function getDropPosition(
 }
 
 function handleDragOver(event: DragEvent, node: MusicTreeNode): void {
-  event.preventDefault()
-  activeDrop.value = { nodeId: node.id, position: getDropPosition(event, node) }
-  if (event.dataTransfer) {
-    event.dataTransfer.dropEffect = props.source === 'queue' ? 'move' : 'copy'
+  if (props.readonly || !props.allowDrop) {
+    return
   }
+  applyTreeDropEffect(event, props.source)
+  externalDragActive.value = isExternalFileDrag(event)
+  activeDrop.value = { nodeId: node.id, position: getDropPosition(event, node) }
 }
 
 function handleDrop(event: DragEvent, node: MusicTreeNode): void {
+  if (props.readonly || !props.allowDrop) {
+    return
+  }
   event.preventDefault()
   const position = getDropPosition(event, node)
   activeDrop.value = null
-  emit('dropNode', node.id, position)
+  externalDragActive.value = false
+  if (isExternalFileDrag(event)) {
+    emit('dropExternalNode', [...(event.dataTransfer?.files ?? [])], node.id, position)
+  } else {
+    emit('dropNode', node.id, position)
+  }
+}
+
+function handleLevelDragOver(event: DragEvent): void {
+  if (props.readonly || !props.allowDrop) {
+    return
+  }
+  applyTreeDropEffect(event, props.source)
+  externalDragActive.value = isExternalFileDrag(event)
+}
+
+function handleLevelDrop(event: DragEvent): void {
+  if (props.readonly || !props.allowDrop) {
+    return
+  }
+  event.preventDefault()
+  externalDragActive.value = false
+  if (isExternalFileDrag(event)) {
+    emit('dropExternalLevel', [...(event.dataTransfer?.files ?? [])], props.parentId, props.nodes.length)
+  } else {
+    emit('dropLevel', props.parentId, props.nodes.length)
+  }
 }
 </script>
 
 <template>
   <ul
     class="music-tree"
-    :class="{ 'music-tree--compact': compact, 'music-tree--dragging': dragActive }"
+    :class="{
+      'music-tree--compact': compact,
+      'music-tree--dragging': dragActive || externalDragActive,
+      'music-tree--readonly': readonly
+    }"
     role="tree"
+    @dragover="externalDragActive = isExternalFileDrag($event)"
+    @dragleave.self="externalDragActive = false"
   >
     <li v-for="node in nodes" :key="node.id" class="tree-node" role="treeitem">
       <div
         class="tree-row"
         :class="{
-          'tree-row--selected': selectedIds.has(node.id),
+          'tree-row--selected': !readonly && selectedIds.has(node.id),
           'tree-row--unavailable': unavailableIds.has(node.id),
           [`tree-row--drop-${activeDrop?.position}`]: activeDrop?.nodeId === node.id
         }"
-        draggable="true"
-        @click="emit('toggleSelection', source, node.id)"
-        @dblclick.stop="emit('activate', source, node.id)"
-        @contextmenu.prevent="emit('openContext', $event, source, node.id)"
+        :draggable="!readonly"
+        @click="!readonly && emit('toggleSelection', source, node.id)"
+        @dblclick.stop="!readonly && emit('activate', source, node.id)"
+        @contextmenu.prevent="!readonly && emit('openContext', $event, source, node.id)"
         @dragstart="handleDragStart($event, node.id)"
         @dragend="emit('endDrag')"
         @dragover.stop="handleDragOver($event, node)"
@@ -116,6 +168,7 @@ function handleDrop(event: DragEvent, node: MusicTreeNode): void {
         <span v-else class="tree-expand tree-expand--spacer" />
 
         <input
+          v-if="!readonly"
           class="tree-checkbox"
           type="checkbox"
           :checked="getSelectionState(node, selectedIds) === 'all'"
@@ -123,6 +176,7 @@ function handleDrop(event: DragEvent, node: MusicTreeNode): void {
           :aria-label="`选择 ${node.name}`"
           @click.stop="emit('toggleSelection', source, node.id)"
         />
+        <span v-else class="tree-checkbox-spacer" />
 
         <ListMusic v-if="node.type === 'playlist'" class="tree-icon" :size="18" />
         <Music v-else class="tree-icon" :size="18" />
@@ -147,27 +201,25 @@ function handleDrop(event: DragEvent, node: MusicTreeNode): void {
         :parent-id="node.id"
         :compact="compact"
         :drag-active="dragActive"
-        @toggle-selection="
-          (childSource, childId) => emit('toggleSelection', childSource, childId)
-        "
+        :readonly="readonly"
+        :allow-drop="allowDrop"
+        @toggle-selection="(childSource, childId) => emit('toggleSelection', childSource, childId)"
         @toggle-expanded="emit('toggleExpanded', $event)"
         @activate="(childSource, childId) => emit('activate', childSource, childId)"
-        @open-context="
-          (event, childSource, childId) => emit('openContext', event, childSource, childId)
-        "
+        @open-context="(event, childSource, childId) => emit('openContext', event, childSource, childId)"
         @begin-drag="(childSource, childId) => emit('beginDrag', childSource, childId)"
         @end-drag="emit('endDrag')"
         @drop-node="(targetId, position) => emit('dropNode', targetId, position)"
-        @drop-level="
-          (parentId, index) => emit('dropLevel', parentId, index)
-        "
+        @drop-level="(parentId, index) => emit('dropLevel', parentId, index)"
+        @drop-external-node="(files, targetId, position) => emit('dropExternalNode', files, targetId, position)"
+        @drop-external-level="(files, parentId, index) => emit('dropExternalLevel', files, parentId, index)"
       />
     </li>
     <li
-      v-if="source === 'queue'"
+      v-if="allowDrop && !readonly"
       class="tree-root-drop"
-      @dragover.prevent
-      @drop.prevent.stop="emit('dropLevel', parentId, nodes.length)"
+      @dragover="handleLevelDragOver"
+      @drop.prevent.stop="handleLevelDrop"
     >
       放到此级末尾
     </li>

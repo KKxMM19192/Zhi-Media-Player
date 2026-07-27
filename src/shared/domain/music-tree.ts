@@ -170,7 +170,7 @@ export function cloneTreeWithIdMap(
   nodes: readonly MusicTreeNode[],
   idFactory: NodeIdFactory = createNodeId
 ): { nodes: MusicTreeNode[]; clonedIdByOriginalId: Record<NodeId, NodeId> } {
-  const clonedIdByOriginalId: Record<NodeId, NodeId> = {}
+  const clonedIdByOriginalId = Object.create(null) as Record<NodeId, NodeId>
   const cloneNodes = (siblings: readonly MusicTreeNode[]): MusicTreeNode[] =>
     siblings.map((node) => {
       const clonedId = idFactory()

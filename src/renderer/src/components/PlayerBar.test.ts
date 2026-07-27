@@ -46,6 +46,7 @@ describe('PlayerBar restart recovery', () => {
     store.playbackContext = { source: 'library', containerId: 'playlist' }
     store.positionSeconds = 42
     store.paused = true
+    store.mediaRevision += 1
 
     await flushPromises()
     const audioWrapper = wrapper.get('audio')
@@ -80,6 +81,7 @@ describe('PlayerBar restart recovery', () => {
     store.playbackContext = { source: 'library', containerId: 'playlist' }
     store.positionSeconds = 142
     store.paused = true
+    store.mediaRevision += 1
 
     await flushPromises()
     const audioWrapper = wrapper.get('audio')

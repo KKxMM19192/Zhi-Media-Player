@@ -1,7 +1,19 @@
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue'
 import { storeToRefs } from 'pinia'
-import { Music, Pause, Play, SkipBack, SkipForward, Volume2 } from '@lucide/vue'
+import {
+  ListMusic,
+  Music,
+  Pause,
+  Play,
+  Repeat,
+  Repeat1,
+  Shuffle,
+  SkipBack,
+  SkipForward,
+  Volume2,
+  VolumeX
+} from '@lucide/vue'
 import { useAppStore } from '../stores/app-store'
 
 const store = useAppStore()
@@ -11,14 +23,26 @@ const {
   positionSeconds,
   durationSeconds,
   volume,
-  coverDataUrl
+  coverDataUrl,
+  playbackMode,
+  mediaRevision
 } = storeToRefs(store)
 const audio = ref<HTMLAudioElement | null>(null)
 const mediaLoading = ref(false)
+const volumeOpen = ref(false)
 let mediaRequest = 0
 let pendingResumePositionSeconds = 0
 
 const progressMaximum = computed(() => Math.max(durationSeconds.value, positionSeconds.value, 1))
+const playbackModeLabel = computed(
+  () =>
+    ({
+      sequential: '顺序播放',
+      'repeat-all': '顺序循环',
+      'repeat-one': '单曲循环',
+      shuffle: '乱序播放'
+    })[playbackMode.value]
+)
 
 function formatTime(seconds: number): string {
   if (!Number.isFinite(seconds)) {
@@ -29,7 +53,7 @@ function formatTime(seconds: number): string {
 }
 
 watch(
-  () => currentTrack.value?.id,
+  mediaRevision,
   async () => {
     const request = ++mediaRequest
     const element = audio.value
@@ -141,7 +165,7 @@ function handleTimeUpdate(): void {
       @loadedmetadata="handleLoadedMetadata"
       @timeupdate="handleTimeUpdate"
       @durationchange="audio && store.updateDuration(audio.duration)"
-      @ended="store.playAdjacent(1)"
+      @ended="store.playAdjacent(1, 'track-ended')"
       @error="currentTrack && store.markPlaybackError()"
     />
 
@@ -201,11 +225,32 @@ function handleTimeUpdate(): void {
         >
           <SkipForward :size="21" />
         </button>
+        <button
+          type="button"
+          class="icon-button mode-button"
+          :aria-label="`切换播放模式，当前为${playbackModeLabel}`"
+          :title="`当前模式：${playbackModeLabel}`"
+          @click="store.cyclePlaybackMode"
+        >
+          <ListMusic v-if="playbackMode === 'sequential'" :size="20" />
+          <Repeat v-else-if="playbackMode === 'repeat-all'" :size="20" />
+          <Repeat1 v-else-if="playbackMode === 'repeat-one'" :size="20" />
+          <Shuffle v-else :size="20" />
+        </button>
       </div>
 
-      <label class="volume-control">
-        <Volume2 :size="20" aria-hidden="true" />
+      <div class="volume-control" :class="{ open: volumeOpen }">
+        <button
+          type="button"
+          class="icon-button"
+          :aria-label="volumeOpen ? '收起音量滑块' : '展开音量滑块'"
+          @click="volumeOpen = !volumeOpen"
+        >
+          <VolumeX v-if="volume === 0" :size="20" />
+          <Volume2 v-else :size="20" />
+        </button>
         <input
+          v-show="volumeOpen"
           type="range"
           min="0"
           max="1"
@@ -214,7 +259,7 @@ function handleTimeUpdate(): void {
           aria-label="音量"
           @input="store.updateVolume(Number(($event.target as HTMLInputElement).value))"
         />
-      </label>
+      </div>
     </div>
   </footer>
 </template>

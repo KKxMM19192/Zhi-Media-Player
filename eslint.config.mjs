@@ -8,6 +8,7 @@ const runtimeGlobals = {
   Buffer: 'readonly',
   DragEvent: 'readonly',
   Event: 'readonly',
+  File: 'readonly',
   HTMLAudioElement: 'readonly',
   HTMLElement: 'readonly',
   HTMLInputElement: 'readonly',

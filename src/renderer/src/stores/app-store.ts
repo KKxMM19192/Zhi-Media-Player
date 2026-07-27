@@ -2,12 +2,12 @@ import { computed, ref } from 'vue'
 import { defineStore } from 'pinia'
 import {
   APP_STATE_SCHEMA_VERSION,
+  MAX_PERSISTED_TOTAL_NODE_COUNT,
   MAX_PERSISTED_TREE_NODE_COUNT,
   createDefaultAppState,
   type PersistedAppState
 } from '../../../shared/domain/app-state'
 import {
-  cloneTree,
   cloneTreeWithIdMap,
   cloneTreeWithNewIds,
   collectSubtreeIds,
@@ -207,6 +207,55 @@ export const useAppStore = defineStore('app', () => {
       ...queueHistory.value.map((entry) => entry.nodes),
       ...(shuffle.value ? [shuffle.value.originalQueue] : [])
     ]
+  }
+
+  function acceptsStateSize(
+    label: string,
+    candidate: {
+      readonly library?: readonly MusicTreeNode[]
+      readonly queue?: readonly MusicTreeNode[]
+      readonly savedQueues?: readonly SavedQueue[]
+      readonly queueHistory?: readonly QueueHistoryEntry[]
+      readonly shuffle?: ShuffleState | null
+    } = {}
+  ): boolean {
+    const candidateLibrary = candidate.library ?? library.value
+    const candidateQueue = candidate.queue ?? queue.value
+    const candidateSavedQueues = candidate.savedQueues ?? savedQueues.value
+    const candidateQueueHistory = candidate.queueHistory ?? queueHistory.value
+    const candidateShuffle =
+      candidate.shuffle === undefined ? shuffle.value : candidate.shuffle
+    const nodeCount = [
+      candidateLibrary,
+      candidateQueue,
+      ...candidateSavedQueues.map((savedQueue) => savedQueue.nodes),
+      ...candidateQueueHistory.map((entry) => entry.nodes),
+      ...(candidateShuffle ? [candidateShuffle.originalQueue] : [])
+    ].reduce((count, nodes) => count + flattenTree(nodes).length, 0)
+    if (nodeCount <= MAX_PERSISTED_TOTAL_NODE_COUNT) {
+      return true
+    }
+    errorMessage.value = `${label}会使应用状态超过 ${MAX_PERSISTED_TOTAL_NODE_COUNT} 个节点的安全上限，本次操作未应用。`
+    return false
+  }
+
+  function acceptsTreeReplacement(
+    source: TreeSource,
+    nodes: readonly MusicTreeNode[],
+    savedQueueId: NodeId | null,
+    label: string
+  ): boolean {
+    if (source === 'library') {
+      return acceptsStateSize(label, { library: nodes })
+    }
+    if (source === 'queue') {
+      return acceptsStateSize(label, { queue: nodes })
+    }
+    const targetId = savedQueueId ?? activeSavedQueueId.value
+    const candidateSavedQueues = savedQueues.value.map((savedQueue) =>
+      savedQueue.id === targetId ? { ...savedQueue, nodes: [...nodes] } : savedQueue
+    )
+    return acceptsStateSize(label, { savedQueues: candidateSavedQueues })
   }
 
   const unavailableNodeIds = computed(() => {
@@ -427,7 +476,10 @@ export const useAppStore = defineStore('app', () => {
         return
       }
       const nextLibrary = [...library.value, ...imported]
-      if (!acceptsTreeSize(nextLibrary, '分类歌单')) {
+      if (
+        !acceptsTreeSize(nextLibrary, '分类歌单') ||
+        !acceptsStateSize('导入音乐文件夹', { library: nextLibrary })
+      ) {
         return
       }
       library.value = nextLibrary
@@ -450,7 +502,10 @@ export const useAppStore = defineStore('app', () => {
         index: library.value.length
       })
       const nextLibrary = [...library.value, ...filtered.nodes]
-      if (!acceptsTreeSize(nextLibrary, '分类歌单')) {
+      if (
+        !acceptsTreeSize(nextLibrary, '分类歌单') ||
+        !acceptsStateSize('导入音乐', { library: nextLibrary })
+      ) {
         return
       }
       library.value = nextLibrary
@@ -644,8 +699,21 @@ export const useAppStore = defineStore('app', () => {
     const nextMode = getNextPlaybackMode(playbackMode.value)
     if (nextMode === 'shuffle') {
       const transition = enterShuffle(queue.value)
+      if (
+        !acceptsStateSize('进入乱序模式', {
+          queue: transition.queue,
+          shuffle: transition.shuffle
+        })
+      ) {
+        return
+      }
       queue.value = transition.queue
       shuffle.value = transition.shuffle
+      expandedNodeIds.value = new Set(
+        [...expandedNodeIds.value].map(
+          (nodeId) => transition.originalNodeIdByQueueNodeId[nodeId] ?? nodeId
+        )
+      )
       selectedQueueIds.value = new Set()
     } else if (playbackMode.value === 'shuffle' && shuffle.value) {
       const transition = exitShuffle(
@@ -654,6 +722,15 @@ export const useAppStore = defineStore('app', () => {
         queueHistory.value,
         playbackContext.value?.source === 'queue' ? currentTrackId.value : null
       )
+      if (
+        !acceptsStateSize('退出乱序模式', {
+          queue: transition.queue,
+          queueHistory: transition.history,
+          shuffle: null
+        })
+      ) {
+        return
+      }
       queue.value = transition.queue
       queueHistory.value = transition.history
       shuffle.value = null
@@ -743,7 +820,10 @@ export const useAppStore = defineStore('app', () => {
       copies,
       destination ?? { parentId: null, index: queue.value.length }
     )
-    if (!acceptsTreeSize(nextQueue, '当前播放队列')) {
+    if (
+      !acceptsTreeSize(nextQueue, '当前播放队列') ||
+      !acceptsStateSize('加入播放队列', { queue: nextQueue })
+    ) {
       return
     }
     queue.value = nextQueue
@@ -826,7 +906,16 @@ export const useAppStore = defineStore('app', () => {
         }
         next = insertNodes(targetRoots, additions, destination)
       }
-      if (!acceptsTreeSize(next, targetSource === 'library' ? '分类歌单' : '播放队列')) {
+      const label = targetSource === 'library' ? '分类歌单' : '播放队列'
+      if (
+        !acceptsTreeSize(next, label) ||
+        !acceptsTreeReplacement(
+          targetSource,
+          next,
+          resolvedTargetSavedQueueId,
+          '拖拽操作'
+        )
+      ) {
         return
       }
       writeRoots(targetSource, next, resolvedTargetSavedQueueId)
@@ -866,7 +955,11 @@ export const useAppStore = defineStore('app', () => {
         skippedCount += filtered.skippedCount
       }
       const next = insertNodes(targetRoots, additions, destination)
-      if (!acceptsTreeSize(next, targetSource === 'library' ? '分类歌单' : '播放队列')) {
+      const label = targetSource === 'library' ? '分类歌单' : '播放队列'
+      if (
+        !acceptsTreeSize(next, label) ||
+        !acceptsTreeReplacement(targetSource, next, targetSavedQueueId, '外部导入')
+      ) {
         return
       }
       writeRoots(targetSource, next, targetSavedQueueId)
@@ -915,7 +1008,11 @@ export const useAppStore = defineStore('app', () => {
       return
     }
     const savedQueue = createSavedQueue(normalizedName, queue.value)
-    savedQueues.value = [...savedQueues.value, savedQueue]
+    const nextSavedQueues = [...savedQueues.value, savedQueue]
+    if (!acceptsStateSize('保存当前队列', { savedQueues: nextSavedQueues })) {
+      return
+    }
+    savedQueues.value = nextSavedQueues
     activeSavedQueueId.value = savedQueue.id
     queueSection.value = 'saved'
     scheduleSave()
@@ -944,11 +1041,25 @@ export const useAppStore = defineStore('app', () => {
     scheduleSave()
   }
 
-  function recordCurrentQueue(reason: QueueHistoryEntry['reason'], protectedEntryId?: NodeId): void {
-    queueHistory.value = appendQueueHistory(queueHistory.value, queue.value, reason, {
+  function recordCurrentQueue(
+    reason: QueueHistoryEntry['reason'],
+    protectedEntryId?: NodeId,
+    replacementQueue: readonly MusicTreeNode[] = queue.value
+  ): boolean {
+    const nextHistory = appendQueueHistory(queueHistory.value, queue.value, reason, {
       protectedEntryId
     })
+    if (
+      !acceptsStateSize('记录队列历史', {
+        queue: replacementQueue,
+        queueHistory: nextHistory
+      })
+    ) {
+      return false
+    }
+    queueHistory.value = nextHistory
     activeHistoryEntryId.value = queueHistory.value.at(-1)?.id ?? activeHistoryEntryId.value
+    return true
   }
 
   async function replaceQueueWithSaved(savedQueueId: NodeId, startPlaying: boolean): Promise<void> {
@@ -956,11 +1067,13 @@ export const useAppStore = defineStore('app', () => {
     if (!savedQueue) {
       return
     }
-    recordCurrentQueue('replace')
     const cloned = cloneTreeWithIdMap(savedQueue.nodes)
     let replacement = cloned.nodes
     if (playbackMode.value === 'shuffle') {
       replacement = flattenTracks(replacement)
+    }
+    if (!recordCurrentQueue('replace', undefined, replacement)) {
+      return
     }
     if (playbackContext.value?.source === 'queue') {
       stopPlayback()
@@ -990,11 +1103,13 @@ export const useAppStore = defineStore('app', () => {
     if (!targetOriginal) {
       return
     }
-    recordCurrentQueue('replace')
     const cloned = cloneTreeWithIdMap(savedQueue.nodes)
     let replacement = cloned.nodes
     if (playbackMode.value === 'shuffle') {
       replacement = flattenTracks(replacement)
+    }
+    if (!recordCurrentQueue('replace', undefined, replacement)) {
+      return
     }
     if (playbackContext.value?.source === 'queue') {
       stopPlayback()
@@ -1021,7 +1136,10 @@ export const useAppStore = defineStore('app', () => {
     }
     const additions: MusicTreeNode[] = playbackMode.value === 'shuffle' ? flattenTracks([wrapper]) : [wrapper]
     const next = insertNodes(queue.value, additions, destination)
-    if (!acceptsTreeSize(next, '当前播放队列')) {
+    if (
+      !acceptsTreeSize(next, '当前播放队列') ||
+      !acceptsStateSize('插入已保存队列', { queue: next })
+    ) {
       return
     }
     queue.value = next
@@ -1033,7 +1151,9 @@ export const useAppStore = defineStore('app', () => {
     if (queue.value.length === 0) {
       return
     }
-    recordCurrentQueue('clear')
+    if (!recordCurrentQueue('clear', undefined, [])) {
+      return
+    }
     if (playbackContext.value?.source === 'queue') {
       stopPlayback()
     }
@@ -1048,15 +1168,18 @@ export const useAppStore = defineStore('app', () => {
     if (!entry) {
       return
     }
-    recordCurrentQueue('restore', entry.id)
     let restored = cloneTreeWithNewIds(entry.nodes)
     if (playbackMode.value === 'shuffle') {
       restored = flattenTracks(restored)
+    }
+    if (!recordCurrentQueue('restore', entry.id, restored)) {
+      return
     }
     if (playbackContext.value?.source === 'queue') {
       stopPlayback()
     }
     queue.value = restored
+    activeHistoryEntryId.value = entry.id
     selectedQueueIds.value = new Set()
     scheduleSave()
     showMessage('已从队列历史恢复。历史记录仍然保留。')
@@ -1073,7 +1196,11 @@ export const useAppStore = defineStore('app', () => {
       return
     }
     const savedQueue = createSavedQueue(normalizedName, entry.nodes)
-    savedQueues.value = [...savedQueues.value, savedQueue]
+    const nextSavedQueues = [...savedQueues.value, savedQueue]
+    if (!acceptsStateSize('另存队列历史', { savedQueues: nextSavedQueues })) {
+      return
+    }
+    savedQueues.value = nextSavedQueues
     activeSavedQueueId.value = savedQueue.id
     scheduleSave()
     showMessage(`已将历史另存为“${normalizedName}”。`)

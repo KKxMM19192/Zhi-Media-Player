@@ -135,14 +135,19 @@ export function createShuffledQueue(
 export function enterShuffle(
   queue: readonly MusicTreeNode[],
   options: ShuffleOptions = {}
-): { queue: TrackNode[]; shuffle: ShuffleState } {
+): {
+  queue: TrackNode[]
+  shuffle: ShuffleState
+  originalNodeIdByQueueNodeId: Readonly<Record<NodeId, NodeId>>
+} {
   const original = cloneTreeWithIdMap(queue, options.idFactory)
-  const originalTrackIdByShuffledTrackId: Record<NodeId, NodeId> = {}
+  const originalTrackIdByShuffledTrackId = Object.create(null) as Record<NodeId, NodeId>
   flattenTracks(queue).forEach((track) => {
     originalTrackIdByShuffledTrackId[track.id] = original.clonedIdByOriginalId[track.id]
   })
   return {
     queue: createShuffledQueue(queue, options.random),
+    originalNodeIdByQueueNodeId: original.clonedIdByOriginalId,
     shuffle: {
       originalQueue: original.nodes,
       originalTrackIdByShuffledTrackId

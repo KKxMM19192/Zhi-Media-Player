@@ -6,6 +6,14 @@ import { createDefaultAppState, type PersistedAppState } from '../../../shared/d
 import type { MusicTreeNode } from '../../../shared/domain/music-tree'
 import { useAppStore } from './app-store'
 
+vi.mock('../../../shared/domain/app-state', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../../../shared/domain/app-state')>()
+  return {
+    ...actual,
+    MAX_PERSISTED_TOTAL_NODE_COUNT: 101
+  }
+})
+
 const queue: MusicTreeNode[] = [
   {
     id: 'playlist',
@@ -150,6 +158,42 @@ describe('app store queue editing', () => {
     expect(replacementPlaylist.children[0]?.id).not.toBe(savedPlaylist.children[0]?.id)
   })
 
+  it('leaves queue, history, and playback untouched when a replacement exceeds the total node limit', async () => {
+    const store = useAppStore()
+    store.queue = Array.from({ length: 99 }, (_, index) => createTrack(`current-${index}`))
+    store.queueHistory = [
+      {
+        id: 'existing-history',
+        createdAt: 1,
+        reason: 'clear',
+        nodes: [createTrack('history-track')]
+      }
+    ]
+    store.savedQueues = [
+      {
+        id: 'saved-queue',
+        name: 'Saved queue',
+        nodes: [createTrack('saved-track')],
+        createdAt: 1,
+        updatedAt: 1
+      }
+    ]
+    store.currentTrackId = 'current-0'
+    store.playbackContext = { source: 'queue', containerId: null }
+    store.paused = false
+    const previousQueue = [...store.queue]
+    const previousHistory = [...store.queueHistory]
+
+    await store.replaceQueueWithSaved('saved-queue', false)
+
+    expect(store.queue).toEqual(previousQueue)
+    expect(store.queueHistory).toEqual(previousHistory)
+    expect(store.currentTrackId).toBe('current-0')
+    expect(store.playbackContext).toEqual({ source: 'queue', containerId: null })
+    expect(store.paused).toBe(false)
+    expect(store.errorMessage).toContain('超过 101 个节点')
+  })
+
   it('records clear and restore operations while retaining the restored history entry', () => {
     const store = useAppStore()
     store.queue = [createTrack('before-clear')]
@@ -192,6 +236,8 @@ describe('app store queue editing', () => {
     store.queue = createQueue()
     store.currentTrackId = 'current'
     store.playbackContext = { source: 'queue', containerId: null }
+    store.expandedNodeIds = new Set(['playlist'])
+    const mediaRevision = store.mediaRevision
 
     store.cyclePlaybackMode()
     store.cyclePlaybackMode()
@@ -200,6 +246,7 @@ describe('app store queue editing', () => {
     expect(store.playbackMode).toBe('shuffle')
     expect(random).toHaveBeenCalledTimes(2)
     expect(store.queue.every((node) => node.type === 'track')).toBe(true)
+    expect(store.expandedNodeIds.has('playlist')).toBe(false)
     const shuffledCurrentTrackId = store.currentTrackId
     const restoredCurrentTrackId = store.shuffle?.originalTrackIdByShuffledTrackId[shuffledCurrentTrackId!]
     expect(restoredCurrentTrackId).toBeDefined()
@@ -223,6 +270,8 @@ describe('app store queue editing', () => {
     expect(store.queueHistory.at(-1)).toMatchObject({ reason: 'shuffle-exit' })
     expect(store.currentTrackId).toBe(restoredCurrentTrackId)
     expect(store.currentTrack?.path).toBe('C:\\Music\\Current.mp3')
+    expect(store.expandedNodeIds.has(store.queue[0]!.id)).toBe(true)
+    expect(store.mediaRevision).toBe(mediaRevision)
 
     random.mockRestore()
   })
