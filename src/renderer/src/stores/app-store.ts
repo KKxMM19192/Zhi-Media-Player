@@ -1287,8 +1287,11 @@ export const useAppStore = defineStore('app', () => {
     }
   }
 
-  function selectedRepairCandidates(source: TreeSource): FolderMatchCandidate[] {
-    const roots = rootsFor(source)
+  function selectedRepairCandidates(
+    source: TreeSource,
+    savedQueueId: NodeId | null = null
+  ): FolderMatchCandidate[] {
+    const roots = rootsFor(source, savedQueueId)
     const selectedRoots = getSelectedNodes(roots, selectionFor(source))
     const candidates: FolderMatchCandidate[] = []
     const visit = (
@@ -1320,7 +1323,8 @@ export const useAppStore = defineStore('app', () => {
   }
 
   async function repairSelectedFromFolder(source: TreeSource): Promise<void> {
-    const candidates = selectedRepairCandidates(source)
+    const targetSavedQueueId = source === 'saved' ? activeSavedQueueId.value : null
+    const candidates = selectedRepairCandidates(source, targetSavedQueueId)
     if (candidates.length === 0) {
       errorMessage.value = '请先选择标记为文件不可用的音乐或其祖先歌单。'
       return
@@ -1329,6 +1333,14 @@ export const useAppStore = defineStore('app', () => {
     try {
       const result = await window.silentNocturne.matchMusicInFolder(candidates)
       if (!result) {
+        return
+      }
+      if (
+        source === 'saved' &&
+        (!targetSavedQueueId ||
+          !savedQueues.value.some((savedQueue) => savedQueue.id === targetSavedQueueId))
+      ) {
+        errorMessage.value = '原已保存队列已被删除，本次修复结果未应用。'
         return
       }
       const replaceAll =
@@ -1340,7 +1352,7 @@ export const useAppStore = defineStore('app', () => {
         const repairsCurrent =
           playbackContext.value?.source === source &&
           result.replacements.some((replacement) => replacement.key === currentTrackId.value)
-        let roots = rootsFor(source)
+        let roots = rootsFor(source, targetSavedQueueId)
         result.replacements.forEach((replacement) => {
           roots = replaceTrackPathById(
             roots,
@@ -1349,7 +1361,7 @@ export const useAppStore = defineStore('app', () => {
             fileNameFromPath(replacement.newPath)
           )
         })
-        writeRoots(source, roots)
+        writeRoots(source, roots, targetSavedQueueId)
         if (repairsCurrent) {
           resetCurrentMediaAfterPathChange()
         }

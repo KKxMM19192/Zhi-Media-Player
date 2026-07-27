@@ -45,6 +45,42 @@ describe('application state schema', () => {
     })
   })
 
+  it('maps schema v1 shuffle mode to its repeat-all playback behavior', () => {
+    const legacyState = {
+      schemaVersion: 1,
+      library: [],
+      queue: [
+        {
+          id: 'queue-track',
+          type: 'track',
+          name: 'Queue.flac',
+          path: 'C:\\Music\\Queue.flac'
+        }
+      ],
+      playback: {
+        currentTrackId: 'queue-track',
+        context: { source: 'queue', containerId: null },
+        positionSeconds: 24,
+        volume: 0.5,
+        mode: 'shuffle',
+        paused: true
+      },
+      expandedNodeIds: []
+    }
+
+    expect(parsePersistedAppState(legacyState)).toMatchObject({
+      schemaVersion: APP_STATE_SCHEMA_VERSION,
+      queue: legacyState.queue,
+      playback: {
+        ...legacyState.playback,
+        mode: 'repeat-all'
+      },
+      savedQueues: [],
+      queueHistory: [],
+      shuffle: null
+    })
+  })
+
   it('requires a matching original queue snapshot while shuffle is active', () => {
     const state = {
       ...createDefaultAppState(),

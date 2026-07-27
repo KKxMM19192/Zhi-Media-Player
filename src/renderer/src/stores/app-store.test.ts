@@ -3,6 +3,7 @@
 import { createPinia, setActivePinia } from 'pinia'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { createDefaultAppState, type PersistedAppState } from '../../../shared/domain/app-state'
+import type { FolderMatchResult } from '../../../shared/contracts/app-api'
 import type { MusicTreeNode } from '../../../shared/domain/music-tree'
 import { useAppStore } from './app-store'
 
@@ -311,5 +312,65 @@ describe('app store queue editing', () => {
       name: 'Playlist'
     })
     expect(() => structuredClone(savedState)).not.toThrow()
+  })
+
+  it('applies an asynchronous folder repair to the saved queue that started it', async () => {
+    let resolveMatch: (result: FolderMatchResult | null) => void = () => undefined
+    const matchResult = new Promise<FolderMatchResult | null>((resolve) => {
+      resolveMatch = resolve
+    })
+    Object.defineProperty(window, 'silentNocturne', {
+      configurable: true,
+      value: {
+        matchMusicInFolder: () => matchResult,
+        checkTracks: async (paths: readonly string[]) =>
+          paths.map((path) => ({ path, available: true }))
+      }
+    })
+    const store = useAppStore()
+    store.savedQueues = [
+      {
+        id: 'saved-a',
+        name: 'Queue A',
+        nodes: [createTrack('track-a')],
+        createdAt: 1,
+        updatedAt: 1
+      },
+      {
+        id: 'saved-b',
+        name: 'Queue B',
+        nodes: [createTrack('track-b')],
+        createdAt: 2,
+        updatedAt: 2
+      }
+    ]
+    store.selectSavedQueue('saved-a')
+    store.selectedSavedIds = new Set(['track-a'])
+    store.unavailablePaths = new Set(['c:\\music\\track-a.mp3'])
+
+    const repair = store.repairSelectedFromFolder('saved')
+    store.selectSavedQueue('saved-b')
+    resolveMatch({
+      replacements: [
+        {
+          key: 'track-a',
+          oldPath: 'C:\\Music\\track-a.mp3',
+          newPath: 'D:\\Recovered\\track-a.mp3'
+        }
+      ],
+      unmatchedKeys: [],
+      ambiguousKeys: []
+    })
+    await repair
+
+    expect(store.activeSavedQueueId).toBe('saved-b')
+    expect(store.savedQueues[0]?.nodes[0]).toMatchObject({
+      id: 'track-a',
+      path: 'D:\\Recovered\\track-a.mp3'
+    })
+    expect(store.savedQueues[1]?.nodes[0]).toMatchObject({
+      id: 'track-b',
+      path: 'C:\\Music\\track-b.mp3'
+    })
   })
 })

@@ -7,6 +7,7 @@ import type {
 } from '../../shared/contracts/app-api'
 import { APP_IPC_CHANNELS } from '../../shared/contracts/app-api'
 import {
+  MAX_PERSISTED_TOTAL_NODE_COUNT,
   MAX_PERSISTED_TREE_NODE_COUNT,
   type PersistedAppState
 } from '../../shared/domain/app-state'
@@ -227,7 +228,7 @@ export function registerAppIpc(
 
   ipcMain.handle(APP_IPC_CHANNELS.migrateDirectory, async (event, value: unknown) => {
     const owner = requireTrustedSender(event)
-    const paths = requirePathArray(value, MAX_PERSISTED_TREE_NODE_COUNT)
+    const paths = requirePathArray(value, MAX_PERSISTED_TOTAL_NODE_COUNT)
     if (paths.some((filePath) => !accessPolicy.resolve(filePath))) {
       throw new Error('The migration request refers to an unauthorized path.')
     }

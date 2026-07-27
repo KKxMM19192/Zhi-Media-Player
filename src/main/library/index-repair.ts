@@ -24,14 +24,21 @@ function comparableName(value: string): string {
   return value.toLocaleLowerCase('en-US')
 }
 
-function directoriesEqual(
-  left: readonly string[],
-  right: readonly string[]
-): boolean {
-  return (
-    left.length === right.length &&
-    left.every((segment, index) => comparableName(segment) === comparableName(right[index]))
-  )
+function relativeFileKey(relativeDirectory: readonly string[], fileName: string): string {
+  return [...relativeDirectory.map(comparableName), comparableName(fileName)].join('\0')
+}
+
+function addIndexedFile(
+  index: Map<string, IndexedRepairFile[]>,
+  key: string,
+  file: IndexedRepairFile
+): void {
+  const matches = index.get(key)
+  if (matches) {
+    matches.push(file)
+  } else {
+    index.set(key, [file])
+  }
 }
 
 async function isSupportedFile(filePath: string): Promise<boolean> {
@@ -109,17 +116,27 @@ export async function matchRepairCandidates(
   candidates: readonly FolderMatchCandidate[]
 ): Promise<FolderMatchResult> {
   const files = await scanRepairFiles(rootPath)
+  const filesByName = new Map<string, IndexedRepairFile[]>()
+  const filesByRelativePath = new Map<string, IndexedRepairFile[]>()
+  files.forEach((file) => {
+    addIndexedFile(filesByName, comparableName(file.fileName), file)
+    addIndexedFile(
+      filesByRelativePath,
+      relativeFileKey(file.relativeDirectory, file.fileName),
+      file
+    )
+  })
   const replacements: FolderMatchResult['replacements'][number][] = []
   const unmatchedKeys: string[] = []
   const ambiguousKeys: string[] = []
 
   for (const candidate of candidates) {
-    const matches = files.filter(
-      (file) =>
-        comparableName(file.fileName) === comparableName(candidate.fileName) &&
-        (candidate.relativeDirectory === null ||
-          directoriesEqual(file.relativeDirectory, candidate.relativeDirectory))
-    )
+    const matches =
+      candidate.relativeDirectory === null
+        ? filesByName.get(comparableName(candidate.fileName)) ?? []
+        : filesByRelativePath.get(
+            relativeFileKey(candidate.relativeDirectory, candidate.fileName)
+          ) ?? []
     if (matches.length === 1) {
       replacements.push({
         key: candidate.key,

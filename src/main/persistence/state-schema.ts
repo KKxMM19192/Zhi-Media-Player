@@ -182,12 +182,21 @@ function validateShuffle(
 }
 
 function migrateSchemaVersionOne(value: Record<string, unknown>): Record<string, unknown> {
+  const playback =
+    isRecord(value.playback) && value.playback.mode === 'shuffle'
+      ? {
+          ...value.playback,
+          // Schema v1 treated shuffle advancement like repeat-all and had no restorable shuffle snapshot.
+          mode: 'repeat-all'
+        }
+      : value.playback
   return {
     ...value,
     schemaVersion: APP_STATE_SCHEMA_VERSION,
     savedQueues: [],
     queueHistory: [],
-    shuffle: null
+    shuffle: null,
+    playback
   }
 }
 
