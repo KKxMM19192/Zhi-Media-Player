@@ -126,14 +126,13 @@ async function chooseDirectories(
 
 export interface AppIpcOptions {
   readonly stateFilePath: string
-  readonly fallbackStateFilePaths?: readonly string[]
 }
 
 export function registerAppIpc(
   accessPolicy: MediaAccessPolicy,
   options: AppIpcOptions
 ): void {
-  const stateStore = new AppStateStore(options.stateFilePath, options.fallbackStateFilePaths)
+  const stateStore = new AppStateStore(options.stateFilePath)
   const windowsReadyToClose = new WeakSet<BrowserWindow>()
 
   ipcMain.handle(APP_IPC_CHANNELS.loadState, async (event) => {

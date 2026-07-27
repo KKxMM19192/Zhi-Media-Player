@@ -15,10 +15,7 @@ export interface LoadedAppState {
 export class AppStateStore {
   private saveQueue: Promise<void> = Promise.resolve()
 
-  public constructor(
-    private readonly filePath: string,
-    private readonly fallbackFilePaths: readonly string[] = []
-  ) {}
+  public constructor(private readonly filePath: string) {}
 
   public async load(): Promise<LoadedAppState> {
     try {
@@ -26,31 +23,6 @@ export class AppStateStore {
     } catch (error) {
       if ((error as NodeJS.ErrnoException).code !== 'ENOENT') {
         return this.createRecoveryState()
-      }
-
-      for (const fallbackFilePath of this.fallbackFilePaths) {
-        if (fallbackFilePath === this.filePath) {
-          continue
-        }
-        let state: PersistedAppState
-        try {
-          state = await this.readState(fallbackFilePath)
-        } catch (fallbackError) {
-          if ((fallbackError as NodeJS.ErrnoException).code !== 'ENOENT') {
-            return this.createRecoveryState()
-          }
-          continue
-        }
-
-        try {
-          await this.save(state)
-          return this.createLoadedState(state)
-        } catch {
-          return this.createLoadedState(
-            state,
-            '已恢复早期版本保存的应用状态，但暂时无法迁移到新的状态目录。原文件未被覆盖。'
-          )
-        }
       }
 
       return { state: createDefaultAppState(), warning: null }

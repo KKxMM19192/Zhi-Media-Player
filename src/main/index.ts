@@ -9,11 +9,10 @@ import { registerMediaProtocol, registerMediaScheme } from './media/protocol'
 const allowedExternalProtocols = new Set(['http:', 'https:'])
 const mediaAccessPolicy = new MediaAccessPolicy()
 const stateFileName = 'silent-nocturne-state.json'
-const legacyUserDataDirectory = app.getPath('userData')
-const stableUserDataDirectory = join(app.getPath('appData'), 'Silent Nocturne')
+const userDataDirectory = join(app.getPath('appData'), 'SilentNocturne')
 
-mkdirSync(stableUserDataDirectory, { recursive: true })
-app.setPath('userData', stableUserDataDirectory)
+mkdirSync(userDataDirectory, { recursive: true })
+app.setPath('userData', userDataDirectory)
 registerMediaScheme()
 
 function isAllowedExternalUrl(rawUrl: string): boolean {
@@ -65,8 +64,7 @@ function createWindow(): void {
 app.whenReady().then(() => {
   registerMediaProtocol(mediaAccessPolicy)
   registerAppIpc(mediaAccessPolicy, {
-    stateFilePath: join(stableUserDataDirectory, stateFileName),
-    fallbackStateFilePaths: [join(legacyUserDataDirectory, stateFileName)]
+    stateFilePath: join(userDataDirectory, stateFileName)
   })
   createWindow()
 
