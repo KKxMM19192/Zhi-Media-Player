@@ -1,18 +1,19 @@
 {
-  "extends": "@electron-toolkit/tsconfig/tsconfig.web.json",
+  "extends": "./tsconfig.base.json",
   "include": [
-    "src/renderer/src/env.d.ts",
-    "src/renderer/src/**/*",
+    "src/renderer/src/**/*.ts",
     "src/renderer/src/**/*.vue",
-    "src/preload/*.d.ts"
+    "src/renderer/src/env.d.ts",
+    "src/preload/**/*.d.ts",
+    "src/shared/**/*.ts"
   ],
   "compilerOptions": {
     "composite": true,
     "baseUrl": ".",
+    "lib": ["ES2022", "DOM", "DOM.Iterable"],
+    "types": ["vite/client"],
     "paths": {
-      "@renderer/*": [
-        "src/renderer/src/*"
-      ]
+      "@renderer/*": ["src/renderer/src/*"]
     }
   }
 }
